@@ -1,0 +1,64 @@
+# Datos originales del puerto — no versionar
+data/raw/
+*.xls
+
+# Artefactos de salida generados en la raíz (versión canónica vive en data/)
+/capacidades.csv
+/plan_estiba.xlsx
+
+# Excepciones: los archivos versionados sí
+!data/datos_entrada_kiwi_arrow.xlsx
+!data/capacidades.csv
+!data/plan_estiba.xlsx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing y coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Type checkers
+.mypy_cache/
+.ruff_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints

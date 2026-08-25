@@ -1,0 +1,23 @@
+# Núcleo de optimización — ya en uso
+pulp>=2.8.0
+highspy>=1.7.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+
+# Manipulación de datos
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Interfaz web
+streamlit>=1.32.0
+
+# Visualización de planimetría
+matplotlib>=3.8.0
+plotly>=5.20.0
+
+# Desarrollo y tests
+pytest>=8.0.0
+pytest-cov>=4.1.0
+black>=24.0.0
+ruff>=0.3.0
+mypy>=1.9.0
