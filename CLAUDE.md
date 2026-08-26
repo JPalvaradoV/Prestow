@@ -185,3 +185,4 @@ La web va a envolver esto, no reemplazarlo.
 - `docs/Restricciones_Modelo_Prestow_Lirquen.pdf` — formulación matemática completa
 - `docs/Guia_de_tareas_Prestow_Lirquen.pdf` — las 120 tareas del proyecto
 - `docs/04_Prompt_Informe_Tecnico.md` y `docs/01_Contexto_Informe_Academico.md` — bases de los informes finales
+- **`docs/05_Estado_app_web.md`** — **estado actual de la app Streamlit** (leer antes de tocar `app/`): qué se construyó en Fases 1 y 1.5, decisiones de diseño, bugs resueltos y lo que falta
