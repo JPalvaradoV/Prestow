@@ -22,10 +22,13 @@ from components.formato import (
     formato_unidades,
     generar_excel_bytes,
     generar_kpis_csv,
+    generar_reporte_parametros,
 )
 from components.vista_buque import (
+    plot_balance_peso,
     plot_capas_bodega,
     plot_heatmap_destinos,
+    plot_planimetria_capa,
     plot_timeline_cuadrillas,
     plot_vista_lateral,
 )
@@ -70,9 +73,11 @@ if "resultado" not in st.session_state:
 
 resultado = st.session_state["resultado"]
 meta = st.session_state.get("metadata", {})
-makespan_manual = meta.get("makespan_manual_h", 60.61)
-ahorro = makespan_manual - resultado.makespan
-ahorro_pct = (ahorro / makespan_manual) * 100
+makespan_manual = meta.get("makespan_manual_h")
+hay_referencia = makespan_manual is not None
+if hay_referencia:
+    ahorro = makespan_manual - resultado.makespan
+    ahorro_pct = (ahorro / makespan_manual) * 100
 
 # ---------------------------------------------------------------------------
 # Indicadores clave
@@ -82,22 +87,33 @@ st.markdown("### ⏱️ Indicadores clave")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # Texto explícito en lugar de depender del signo del delta
-    delta_label = f"{ahorro:.2f} h más rápido que el plan de referencia"
-    st.metric(
-        label="⏱️ Makespan",
-        value=formato_horas(resultado.makespan),
-        delta=delta_label,
-        help=f"Tiempo total de carga. Plan de referencia: {makespan_manual:.2f} h",
-    )
+    if hay_referencia:
+        # Texto explícito en lugar de depender del signo del delta
+        delta_label = f"{ahorro:.2f} h más rápido que el plan de referencia"
+        st.metric(
+            label="⏱️ Makespan",
+            value=formato_horas(resultado.makespan),
+            delta=delta_label,
+            help=f"Tiempo total de carga. Plan de referencia: {makespan_manual:.2f} h",
+        )
+    else:
+        st.metric(
+            label="⏱️ Makespan",
+            value=formato_horas(resultado.makespan),
+            help="Tiempo total de carga. Caso editado: sin plan de referencia para comparar.",
+        )
 
 with col2:
-    st.metric(
-        label="📉 Ahorro vs referencia",
-        value=f"{ahorro:.2f} h",
-        delta=f"{ahorro_pct:.1f}% del tiempo total",
-        help=f"El plan de referencia es {makespan_manual:.2f} h.",
-    )
+    if hay_referencia:
+        st.metric(
+            label="📉 Ahorro vs referencia",
+            value=f"{ahorro:.2f} h",
+            delta=f"{ahorro_pct:.1f}% del tiempo total",
+            help=f"El plan de referencia es {makespan_manual:.2f} h.",
+        )
+    else:
+        st.metric(label="📉 Ahorro vs referencia", value="—",
+                   help="Sin plan de referencia para este caso editado.")
 
 with col3:
     seg = resultado.tiempo_solver_s
@@ -226,6 +242,123 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
+# Planimetría y secuencia de izadas
+# ---------------------------------------------------------------------------
+st.markdown("## 🗺️ Planimetría y secuencia de izadas")
+
+if resultado.plan:
+    ruta_datos = st.session_state.get("ruta_datos", "")
+    try:
+        if "huellas_productos" not in st.session_state:
+            from layout_capa import obtener_geometria_bodegas, obtener_huellas
+            st.session_state["huellas_productos"] = obtener_huellas(ruta_datos)
+            st.session_state["geometria_bodegas"] = obtener_geometria_bodegas(ruta_datos)
+        huellas = st.session_state["huellas_productos"]
+        geometria = st.session_state["geometria_bodegas"]
+
+        from layout_capa import layout_para_fila_plan
+        from secuencia_izadas import calcular_secuencia
+
+        capas_con_carga = sorted({(f.bodega, f.plan) for f in resultado.plan})
+        bodegas_con_carga = sorted({b for b, _ in capas_con_carga})
+
+        col_b, col_p, col_c = st.columns([1, 1, 1.5])
+        with col_b:
+            bod_sel = st.selectbox("Bodega", options=bodegas_con_carga,
+                                    format_func=lambda h: f"Bodega {h}")
+        with col_p:
+            planes_bodega = sorted({t for b, t in capas_con_carga if b == bod_sel})
+            plan_sel = st.selectbox("Plan (capa)", options=planes_bodega,
+                                     format_func=lambda t: f"Plan {t}")
+        with col_c:
+            color_por = st.selectbox("Colorear planimetría por",
+                                      options=["Destino", "Producto", "Orden de izada"])
+
+        layout = layout_para_fila_plan(bod_sel, plan_sel, resultado.plan, geometria, huellas)
+        rot = {d: i + 1 for i, d in enumerate(meta.get("destinos", ["TAICHUNG", "QINGDAO", "KUNSAN", "ULSAN"]))}
+        izadas = calcular_secuencia(layout, rot)
+
+        orden_map = None
+        if color_por == "Orden de izada":
+            orden_map = {id(u): iz.numero for iz in izadas for u in iz.unidades}
+
+        largo_piso, ancho_piso = geometria.get(bod_sel, (18.30, 27.40))
+        fig_plan = plot_planimetria_capa(layout, largo_piso, ancho_piso,
+                                          colorear_por=color_por, orden=orden_map)
+        st.plotly_chart(fig_plan, use_container_width=True, config=_PLOTLY_CONFIG)
+        st.caption(
+            f"Bodega {bod_sel}, plan {plan_sel}: {len(layout)} unidades · {len(izadas)} izadas. "
+            "Posiciones y orden de carga son una aproximación de visualización "
+            "(no una restricción verificada del modelo — ver CLAUDE.md, supuesto 7)."
+        )
+
+        with st.expander(f"📋 Secuencia de izadas — bodega {bod_sel}, plan {plan_sel} ({len(izadas)} izadas)"):
+            df_izadas = pd.DataFrame([
+                {
+                    "Izada": iz.numero,
+                    "Unidades": iz.cantidad,
+                    "Producto(s)": ", ".join(sorted(iz.productos)),
+                    "Destino(s)": ", ".join(sorted(iz.destinos)),
+                }
+                for iz in izadas
+            ])
+            st.dataframe(df_izadas, hide_index=True, use_container_width=True)
+    except Exception as exc:
+        st.warning(
+            "No se pudo calcular la planimetría de esta capa. "
+            f"Detalle técnico: {type(exc).__name__}: {exc}"
+        )
+else:
+    st.info("Sin datos de plan para mostrar la planimetría.")
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Balance de peso (informativo)
+# ---------------------------------------------------------------------------
+st.markdown("## ⚖️ Balance de peso (informativo)")
+st.caption(
+    "El modelo no restringe peso ni distribución por bodega: se midió y no hay "
+    "evidencia de problema operativo (CLAUDE.md sección 6). Este panel es solo "
+    "informativo."
+)
+
+if resultado.plan:
+    try:
+        from balance_peso import calcular_balance
+        huellas = st.session_state.get("huellas_productos") or {}
+        geometria = st.session_state.get("geometria_bodegas") or {}
+        if not huellas or not geometria:
+            from layout_capa import obtener_geometria_bodegas, obtener_huellas
+            ruta_datos = st.session_state.get("ruta_datos", "")
+            huellas = obtener_huellas(ruta_datos)
+            geometria = obtener_geometria_bodegas(ruta_datos)
+
+        balance = calcular_balance(resultado.plan, huellas, geometria=geometria)
+
+        col_bp1, col_bp2, col_bp3 = st.columns(3)
+        with col_bp1:
+            st.metric("Dispersión relativa de densidad", f"{balance.dispersion_relativa:.1f}%")
+        with col_bp2:
+            st.metric("Bodega más cargada", f"Bodega {balance.bodega_mas_cargada}",
+                       help=f"{balance.peso_por_bodega[balance.bodega_mas_cargada]:,.0f} t".replace(",", "."))
+        with col_bp3:
+            st.metric("Bodega menos cargada", f"Bodega {balance.bodega_menos_cargada}",
+                       help=f"{balance.peso_por_bodega[balance.bodega_menos_cargada]:,.0f} t".replace(",", "."))
+
+        fig_balance = plot_balance_peso(balance.peso_por_bodega, balance.densidad_por_bodega)
+        st.plotly_chart(fig_balance, use_container_width=True, config=_PLOTLY_CONFIG)
+    except Exception as exc:
+        st.warning(
+            "No se pudo calcular el balance de peso. "
+            f"Detalle técnico: {type(exc).__name__}: {exc}"
+        )
+else:
+    st.info("Sin datos de plan para mostrar el balance de peso.")
+
+st.divider()
+
+# ---------------------------------------------------------------------------
 # Tabla del plan
 # ---------------------------------------------------------------------------
 st.markdown("### 📋 Plan de estiba por bodega")
@@ -280,7 +413,15 @@ if "resultado_kpis_csv" not in st.session_state:
     except Exception:
         st.session_state["resultado_kpis_csv"] = None
 
-col_dl1, col_dl2, col_dl3 = st.columns(3)
+if "resultado_parametros_csv" not in st.session_state:
+    try:
+        st.session_state["resultado_parametros_csv"] = generar_reporte_parametros(
+            resultado, st.session_state.get("parametros_corrida", {})
+        )
+    except Exception:
+        st.session_state["resultado_parametros_csv"] = None
+
+col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
 
 with col_dl1:
     excel_bytes = st.session_state.get("resultado_excel")
@@ -307,6 +448,17 @@ with col_dl2:
         )
 
 with col_dl3:
+    parametros_csv = st.session_state.get("resultado_parametros_csv")
+    if parametros_csv:
+        st.download_button(
+            label="📥 Parámetros (CSV)",
+            data=parametros_csv,
+            file_name="parametros_corrida.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+with col_dl4:
     if st.button("🔄 Ejecutar de nuevo", use_container_width=True):
         st.switch_page("pages/1_Ejecutar.py")
 

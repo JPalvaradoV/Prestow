@@ -131,3 +131,24 @@ with col_desc:
 if demo_click:
     cargar_caso_demo()
     st.switch_page("pages/1_Ejecutar.py")
+
+st.markdown("### 🛠️ O configura tu propio caso")
+col_btn2, col_desc2 = st.columns([1, 3], gap="medium")
+
+with col_btn2:
+    config_click = st.button(
+        "🛠️ Ir a Configuración",
+        use_container_width=True,
+        help="Empieza desde el caso demo y edita bodegas, productos, viaje y rotación",
+    )
+
+with col_desc2:
+    st.markdown(
+        "Edita el buque, los productos, el viaje o la rotación desde el caso demo. "
+        "Al guardar, la capacidad por bodega se recalcula automáticamente."
+    )
+
+if config_click:
+    if "ruta_datos" not in st.session_state:
+        cargar_caso_demo()
+    st.switch_page("pages/0_Configuracion.py")

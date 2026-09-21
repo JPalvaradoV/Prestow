@@ -235,3 +235,123 @@ http://localhost:8501
 La app no necesita los formularios para funcionar — el caso demo usa los archivos
 en `data/` directamente. El flujo completo es:
 **Inicio → "▶ Ejecutar caso demo" → Ejecutar → "🚀 Calcular" (~6 min) → Resultados**
+
+---
+
+## 8. Fase 2 — formularios editables, planimetría, izadas y balance de peso
+
+> Sesión del 21 de septiembre de 2026. Completa las secciones que faltaban de
+> la tabla de la sección 4 de CLAUDE.md: Configuración del buque, Productos,
+> Viaje, Rotación, Planimetría, Izadas y secuencia, y Balance de peso.
+
+### Módulos nuevos en `src/`
+
+| Módulo | Qué hace |
+|---|---|
+| `src/layout_capa.py` | Posición (x, y, rotación) de cada unidad dentro de una capa. `calcular_layout_capa()` llena grilla uniforme para capas de un solo producto/destino (80 de 85 capas del caso base); para capas mixtas reparte el piso en franjas verticales proporcionales al área de cada grupo (SUPUESTO declarado en el docstring: es una aproximación de visualización, no una cota de capacidad — la capacidad real la valida `capacidades.csv`). `obtener_huellas()` y `obtener_geometria_bodegas()` leen (largo, ancho) reales desde el Excel/carpeta de entrada, algo que `HUELLA`/`PISO` de `modelo_prestow.py` no exponen por separado (`HUELLA` solo guarda el área). |
+| `src/secuencia_izadas.py` | Agrupa el layout de una capa en izadas de `UNIDADES_POR_IZADA=16`. Orden heurístico (no viene del modelo, documentado en el docstring): destino según rotación de descarga (se carga primero el que se descarga al final) → producto → barrido en serpentina por columna. |
+
+Ambos con tests en `tests/test_layout_capa.py` y `tests/test_secuencia_izadas.py`
+(11 casos, incluye que la capa mono-producto reproduce las 194 unidades
+verificadas de N_ALDEA_EKP en bodega 1).
+
+### Página nueva: `app/pages/0_Configuracion.py`
+
+Formularios editables con `st.data_editor` en cuatro tabs: Buque, Productos,
+Viaje, Rotación. Usa `app/components/config_editable.py` (funciones puras,
+sin Streamlit):
+
+- `leer_tablas_editables(ruta_datos)` — lee las 4 hojas del Excel a DataFrames.
+- `validar_tablas(tablas)` — coherencia mínima (bodegas/productos/destinos sin
+  duplicar, huellas y unidades positivas, que Viaje solo use productos/destinos
+  declarados).
+- `guardar_tablas_editables(tablas, carpeta)` — escribe 4 CSV en el formato que
+  ya leen `packer_2d.leer_entrada` y `modelo_prestow.cargar_desde_csv`
+  (`buque_editado.csv`, `productos_editado.csv`, `rotacion_editado.csv`,
+  `viaje_editado.csv`). **Usa `df.to_dict("records")`, no `df.iterrows()`**:
+  iterrows sube toda la fila al mismo dtype cuando hay columnas mixtas
+  (`bodega` int junto a `largo_m` float), y escribía "8.0" en vez de "8" — se
+  encontró y corrigió en esta sesión.
+- `recalcular_capacidades(carpeta)` — corre `packer_2d` sobre la carpeta
+  editada. Se llama automáticamente al guardar; agregar un producto nuevo
+  dispara el recálculo sin que el usuario corra nada a mano (requisito de
+  CLAUDE.md sección 4).
+- `resumen_metadata(tablas)` — arma la metadata de la web. Marca
+  `es_caso_base: False` y `makespan_manual_h: None`: un caso editado no tiene
+  plan manual de referencia contra el cual comparar.
+
+Al guardar: valida, escribe la carpeta (persistente en
+`session_state["carpeta_config_editada"]`, se reusa entre guardados),
+recalcula capacidades, actualiza `ruta_datos`/`ruta_capacidades`/`metadata`, y
+limpia cualquier resultado/caché previo (`resultado`, `huellas_productos`,
+`geometria_bodegas`, etc.) para que Resultados no mezcle datos de una
+corrida anterior con la config nueva.
+
+**Probado de punta a punta**: se agregó un producto ficticio vía las tablas
+editables, se guardó, se verificó que `capacidades.csv` lo incluyera para las
+8 bodegas, y se corrió `resolver_prestow()` sobre la carpeta editada — el
+modelo ubicó correctamente las 100 unidades del producto nuevo.
+
+### `1_Ejecutar.py` y `2_Resultados.py`: soporte para casos sin plan de referencia
+
+Antes, `meta.get("makespan_manual_h", 60.61)` fallaba silenciosamente mal: si
+la clave existe con valor `None` (caso editado), `.get(..., default)` devuelve
+`None`, no el default, y `ahorro = None - resultado.makespan` revienta.
+Corregido en ambas páginas: si no hay `makespan_manual_h`, se muestra el
+makespan sin comparación ("Caso editado: sin plan de referencia para
+comparar") en vez de crashear.
+
+También se guarda `parametros_corrida` en `session_state` al ejecutar
+(solver, límite de segundos, ruta de datos, fecha/hora) y se genera un tercer
+CSV descargable con `generar_reporte_parametros()` (nuevo en
+`components/formato.py`) — cierra el pendiente de CLAUDE.md sección 4,
+"reporte de parámetros de la corrida" en Descarga.
+
+### `2_Resultados.py`: dos secciones nuevas
+
+**🗺️ Planimetría y secuencia de izadas** (entre "Vista del buque" y la tabla
+del plan): selector de bodega + plan (capa) + "colorear por"
+(Destino/Producto/Orden de izada — nombre del selectbox deliberadamente
+distinto del "Colorear por" de la vista lateral de arriba, que ya existía;
+tener dos widgets con la misma etiqueta rompía la navegación y los tests
+headless no podían distinguirlos). Dibuja la capa real con
+`plot_planimetria_capa()` (nuevo en `vista_buque.py`, usa el truco de un solo
+trace de Plotly con muchos rectángulos separados por `None` — cientos de
+polígonos sin crear un trace por unidad) y lista la secuencia de izadas en un
+expander con `st.dataframe`.
+
+**⚖️ Balance de peso (informativo)**: usa `balance_peso.calcular_balance()`
+(ya existía, no estaba conectado a la web) con `plot_balance_peso()` (nuevo,
+barras de peso + línea de densidad). Encabezado explícito de que no es
+restricción del modelo (CLAUDE.md sección 6).
+
+Ambas secciones están en `try/except` con mensaje de error legible: si
+`layout_capa`/`secuencia_izadas`/`balance_peso` fallan por datos raros, la
+página no se cae completa.
+
+### Cómo se probó (sin navegador — ver nota abajo)
+
+- `streamlit.testing.v1.AppTest` para correr las páginas sin servidor: carga
+  `2_Resultados.py` con un `ResultadoCorrida` real (resuelto con límite bajo,
+  15-60 s, solo para probar el wiring) y verifica `len(at.exception) == 0`.
+  Se probaron también las interacciones (cambiar "Colorear planimetría por" a
+  cada opción, cambiar de bodega) y `0_Configuracion.py` completo (cargar
+  demo → editar → guardar).
+- **No se pudo probar en navegador real**: la extensión Claude in Chrome no
+  estaba conectada en esta sesión. `AppTest` cubre errores de ejecución
+  (excepciones, imports rotos) pero no verifica layout visual ni CSS — antes
+  de dar la Fase 2 por definitiva conviene una pasada visual en navegador.
+
+### Pendiente detectado, no resuelto en esta sesión
+
+- El plan manual de referencia (60,61 h) y todas sus comparaciones solo
+  aplican al caso base Kiwi Arrow. Un caso editado no tiene esa referencia:
+  quedó resuelto que las páginas no revienten (ver arriba), pero no hay forma
+  de que el usuario sepa qué tan bueno es su resultado editado sin un plan
+  manual propio. Fuera de alcance por ahora.
+- `data/stability_report.csv` (5 semillas, `stability_test.py`) estaba
+  generado pero no comiteado — confirma makespan idéntico (58,0963 h) y
+  asignación por bodega idéntica en las 5 corridas. Esto cierra el pendiente
+  #1 de CLAUDE.md sección 10 ("estabilidad de la asignación entre corridas"):
+  el solver es determinista con la configuración actual. No se editó
+  CLAUDE.md — esa es una decisión del equipo, no algo para cambiar sin aviso.

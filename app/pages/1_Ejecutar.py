@@ -4,6 +4,7 @@ Página Ejecutar — configura parámetros del solver y corre la optimización.
 
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 _DIR_PAGES = Path(__file__).parent
@@ -17,7 +18,11 @@ import streamlit as st
 
 from components.caso_demo import cargar_caso_demo
 from components.estilo import AZUL_MARINO, TEAL, aplicar_estilo_global
-from components.formato import generar_excel_bytes, generar_kpis_csv
+from components.formato import (
+    generar_excel_bytes,
+    generar_kpis_csv,
+    generar_reporte_parametros,
+)
 
 st.set_page_config(
     page_title="Ejecutar",
@@ -205,19 +210,34 @@ if correr:
         st.stop()
 
     st.session_state["resultado"] = resultado
+    st.session_state["parametros_corrida"] = {
+        "solver": solver,
+        "limite_segundos": limite,
+        "ruta_datos": ruta_datos,
+        "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
     try:
         st.session_state["resultado_excel"] = generar_excel_bytes(resultado)
         st.session_state["resultado_kpis_csv"] = generar_kpis_csv(resultado)
+        st.session_state["resultado_parametros_csv"] = generar_reporte_parametros(
+            resultado, st.session_state["parametros_corrida"]
+        )
     except Exception:
         pass
 
-    makespan_manual = meta.get("makespan_manual_h", 60.61)
-    ahorro = makespan_manual - resultado.makespan
+    makespan_manual = meta.get("makespan_manual_h")
 
-    st.success(
-        f"✅ Optimización completada — Makespan: **{resultado.makespan:.2f} h** "
-        f"({ahorro:.2f} h más rápido que el plan de referencia)"
-    )
+    if makespan_manual is not None:
+        ahorro = makespan_manual - resultado.makespan
+        st.success(
+            f"✅ Optimización completada — Makespan: **{resultado.makespan:.2f} h** "
+            f"({ahorro:.2f} h más rápido que el plan de referencia)"
+        )
+    else:
+        st.success(
+            f"✅ Optimización completada — Makespan: **{resultado.makespan:.2f} h**. "
+            "Este es un caso editado: no hay plan de referencia para comparar."
+        )
     st.balloons()
 
     if st.button("📊 Ver resultados completos →", type="primary"):

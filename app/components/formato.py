@@ -102,3 +102,21 @@ def generar_kpis_csv(resultado: object) -> str:
         label = _LABELS_KPI.get(k, k)
         lines.append(f"{label},{v}")
     return "\n".join(lines)
+
+
+def generar_reporte_parametros(resultado: object, parametros: dict) -> str:
+    """
+    Genera un CSV con los parámetros de la corrida y el estado final del
+    solver, para que la corrida quede documentada junto al Excel descargado.
+
+    parametros: dict con al menos "solver", "limite_segundos"; puede incluir
+        "seed", "ruta_datos", "fecha_hora".
+    """
+    filas = list(parametros.items()) + [
+        ("estado_solver", resultado.estado_solver),  # type: ignore[attr-defined]
+        ("gap", resultado.gap if resultado.gap is not None else ""),  # type: ignore[attr-defined]
+        ("tiempo_solver_s", resultado.tiempo_solver_s),  # type: ignore[attr-defined]
+        ("makespan_h", resultado.kpis.get("makespan_h", "")),  # type: ignore[attr-defined]
+    ]
+    lines = ["Parámetro,Valor"] + [f"{k},{v}" for k, v in filas]
+    return "\n".join(lines)

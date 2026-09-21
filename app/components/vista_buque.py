@@ -630,3 +630,169 @@ def plot_heatmap_destinos(plan: list) -> go.Figure:
         ],
     )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# 4e. Planimetría de una capa (posiciones reales, tipo prestow)
+# ---------------------------------------------------------------------------
+# Paleta por producto (hasta 5 productos del caso base + un color de reserva)
+_COLOR_PRODUCTO: dict[str, str] = {
+    "N_ALDEA_EKP": AZUL_MARINO,
+    "N_ALDEA_BKP": TEAL,
+    "ARAUCO_EKP": DORADO,
+    "ARAUCO_BKP": CORAL,
+    "CELCO_UKP": VERDE,
+}
+_COLOR_RESERVA = "#94A3B8"
+
+_N_BUCKETS_ORDEN = 10  # cuantas franjas de color usa el modo "Orden de izada"
+
+
+def _trazo_rectangulos(unidades: list, color: str, nombre: str) -> go.Scatter:
+    """
+    Un solo trace de Plotly con muchos rectángulos: cada rectángulo se cierra
+    y se separa del siguiente con None, truco estándar para dibujar cientos
+    de polígonos sin crear un trace por unidad (rendimiento).
+    """
+    xs: list[float | None] = []
+    ys: list[float | None] = []
+    hover: list[str] = []
+    for u in unidades:
+        x0, y0 = u.x, u.y
+        x1, y1 = u.x + u.largo, u.y + u.ancho
+        xs += [x0, x1, x1, x0, x0, None]
+        ys += [y0, y0, y1, y1, y0, None]
+        hover.append(f"{u.producto} → {u.destino}")
+
+    return go.Scatter(
+        x=xs, y=ys,
+        mode="lines",
+        fill="toself",
+        fillcolor=color,
+        line=dict(color=BLANCO, width=0.5),
+        name=nombre,
+        legendgroup=nombre,
+        hoverinfo="skip",
+    )
+
+
+def plot_planimetria_capa(
+    layout: list,
+    largo_piso: float,
+    ancho_piso: float,
+    colorear_por: str = "Destino",
+    orden: dict[int, int] | None = None,
+) -> go.Figure:
+    """
+    Dibuja el piso de una bodega con la posición real de cada unidad
+    (salida de layout_capa.calcular_layout_capa), coloreada por destino,
+    producto, u orden de izada dentro de la capa.
+
+    layout: lista de objetos con .x, .y, .largo, .ancho, .producto, .destino
+        (UnidadPosicion de src/layout_capa.py).
+    orden: {id(unidad): número de izada}, requerido solo si
+        colorear_por == "Orden de izada" (viene de secuencia_izadas.py).
+    """
+    fig = go.Figure()
+
+    if not layout:
+        fig.update_layout(**_LAYOUT_BASE, height=260,
+                           annotations=[dict(text="Sin unidades para mostrar en esta capa",
+                                              x=0.5, y=0.5, xref="paper", yref="paper",
+                                              showarrow=False, font=dict(color=TEXTO_SECUNDARIO))])
+        return fig
+
+    if colorear_por == "Producto":
+        grupos: dict[str, list] = defaultdict(list)
+        for u in layout:
+            grupos[u.producto].append(u)
+        for nombre, unidades in grupos.items():
+            color = _COLOR_PRODUCTO.get(nombre, _COLOR_RESERVA)
+            fig.add_trace(_trazo_rectangulos(unidades, color, nombre))
+
+    elif colorear_por == "Orden de izada" and orden is not None:
+        max_orden = max(orden.values()) if orden else 1
+        buckets: dict[int, list] = defaultdict(list)
+        for u in layout:
+            t = orden.get(id(u), 0) / max_orden if max_orden else 0.0
+            b = min(_N_BUCKETS_ORDEN - 1, int(t * _N_BUCKETS_ORDEN))
+            buckets[b].append(u)
+        for b in sorted(buckets):
+            color = _interpolar_color(b / (_N_BUCKETS_ORDEN - 1), "#DBEAFE", AZUL_MARINO)
+            desde = b * max_orden // _N_BUCKETS_ORDEN + 1
+            hasta = (b + 1) * max_orden // _N_BUCKETS_ORDEN
+            fig.add_trace(_trazo_rectangulos(buckets[b], color, f"Izadas {desde}-{hasta}"))
+
+    else:  # "Destino", por defecto
+        grupos = defaultdict(list)
+        for u in layout:
+            grupos[u.destino].append(u)
+        for nombre, unidades in grupos.items():
+            color = _COLOR_DESTINO.get(nombre, _COLOR_RESERVA)
+            fig.add_trace(_trazo_rectangulos(unidades, color, nombre))
+
+    fig.add_shape(
+        type="rect", x0=0, y0=0, x1=largo_piso, y1=ancho_piso,
+        line=dict(color=AZUL_MARINO, width=2), fillcolor="rgba(0,0,0,0)",
+    )
+
+    fig.update_layout(
+        **_LAYOUT_BASE,
+        height=420,
+        xaxis=dict(range=[-0.5, largo_piso + 0.5], showgrid=False, zeroline=False,
+                   title="metros (eslora)"),
+        yaxis=dict(range=[-0.5, ancho_piso + 0.5], showgrid=False, zeroline=False,
+                   title="metros (manga)", scaleanchor="x", scaleratio=1),
+        margin=dict(l=48, r=16, t=16, b=48),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        showlegend=True,
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 4f. Balance de peso por bodega (informativo, no es restricción del modelo)
+# ---------------------------------------------------------------------------
+
+def plot_balance_peso(peso_por_bodega: dict[int, float],
+                       densidad_por_bodega: dict[int, float]) -> go.Figure:
+    """
+    Barras de peso por bodega (eje izquierdo) con la densidad como línea
+    (eje derecho). Puramente informativo: el modelo no restringe peso ni
+    distribución (CLAUDE.md sección 6).
+    """
+    bodegas = sorted(peso_por_bodega)
+    pesos = [peso_por_bodega[h] for h in bodegas]
+    densidades = [densidad_por_bodega.get(h, 0.0) for h in bodegas]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[f"Bod. {h}" for h in bodegas],
+        y=pesos,
+        marker_color=TEAL,
+        name="Peso (t)",
+        text=[f"{p:,.0f} t".replace(",", ".") for p in pesos],
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="%{x}: %{y:,.0f} t<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[f"Bod. {h}" for h in bodegas],
+        y=densidades,
+        mode="lines+markers",
+        name="Densidad (t/m²)",
+        marker_color=CORAL,
+        yaxis="y2",
+        hovertemplate="%{x}: %{y:.2f} t/m²<extra></extra>",
+    ))
+
+    fig.update_layout(
+        **_LAYOUT_BASE,
+        height=320,
+        margin=dict(l=48, r=48, t=16, b=32),
+        xaxis=dict(showgrid=False),
+        yaxis=dict(title="Peso (t)", showgrid=True, gridcolor=GRIS_BORDE),
+        yaxis2=dict(title="Densidad (t/m²)", overlaying="y", side="right", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    return fig
