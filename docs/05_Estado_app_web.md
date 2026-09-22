@@ -818,12 +818,78 @@ problema, y que el `T_max` quede coherente con las izadas.
 
 ### Pendiente detectado, no resuelto en esta sesión
 
-- No se probó la app en un navegador real en esta sesión tampoco (seguía
-  siendo el pendiente de la sesión anterior) — el usuario prefirió que se
-  investigara y arreglara este bug primero.
 - El warm start de la pasada 1 solo vive en `api.py` (la web); el CLI
   (`modelo_prestow.py --limite N`) sigue sin él, así que con límites bajos
   desde la línea de comandos el problema original persiste ahí. Es
   consistente con que ya antes solo la web tenía warm start para la
   pasada 3 (ver comentario de `LIMITE_SEGUNDOS_BALANCE` en
   `modelo_prestow.py`).
+
+## 15. QA de Resultados y Configuración + pendiente #1 resuelto (misma sesión, después del warm start)
+
+Con el bug del warm start resuelto, el usuario pidió retomar la prueba
+visual pendiente de la sesión anterior. Claude in Chrome seguía sin estar
+conectado, así que se hizo con `streamlit.testing.v1.AppTest` (igual que en
+Fase 2) en vez de un navegador real — cubre errores de ejecución y avisos
+en pantalla, no layout ni CSS.
+
+### Resultados (`2_Resultados.py`)
+
+Página completa sin excepciones ni warnings ocultos. Se probaron las 32
+combinaciones de los 5 selectbox de la página (Colorear por de la vista
+lateral × 4, Ver detalle de bodega × 8, Bodega de Planimetría × 8, Plan de
+Planimetría × 10, Colorear planimetría por × 2) — las 32, sin excepción. El
+Excel de descarga se generó bien (158 KB, las 7 hojas esperadas: Plan de
+estiba, Detalle, Indicadores, Izadas y secuencia, Planimetría, Balance de
+peso, Parámetros de la corrida).
+
+**Bug del script de prueba, no de la app** (documentado para no repetirlo):
+`AppTest.from_file()` resuelve rutas relativas contra el archivo que hace la
+llamada, no contra el directorio de trabajo — un script en un directorio
+temporal necesita la ruta absoluta. Por separado, `Selectbox.select_index(i)`
+en Streamlit 1.62 tiene un bug real con `format_func`: guarda el string ya
+formateado como si fuera el valor crudo, y el próximo `.index` intenta
+formatearlo de nuevo y no lo encuentra (`ValueError: list.index(x): x not in
+list`). Para un selectbox con `format_func`, hay que pasarle a `.select()` el
+valor CRUDO (el que aparece en `options=...` del código fuente), no el string
+que devuelve `sb.options` (que ya viene formateado para mostrar).
+
+**Hallazgo real, corregido** (commit `a004f6d`): el bloque que carga
+`huellas_productos`/`geometria_bodegas` (usadas en Planimetría, Balance de
+peso y la hoja Planimetría del Excel) atrapaba cualquier excepción en
+silencio, sin ningún aviso — a diferencia de los otros `try/except` de la
+página, que sí muestran `st.warning` con el detalle técnico. Se encontró
+probando la página sin `ruta_datos` en `session_state`: esas tres secciones
+simplemente desaparecían sin explicación. Se agregó el mismo patrón de aviso
+que usa el resto de la página.
+
+### Configuración (`0_Configuracion.py`)
+
+Flujo completo sin excepciones: cargar caso demo → agregar bodega → agregar
+producto → guardar (dispara `recalcular_capacidades`, el packer) → eliminar
+una fila. `metadata` se actualiza correctamente en cada paso (bodegas,
+productos, toneladas).
+
+### Pendiente #1 de CLAUDE.md resuelto: estabilidad entre corridas
+
+`python3 src/stability_test.py --limite 180 --n 5` (5 semillas) con la
+configuración vigente (capacidad real por plan + warm start de las 3
+pasadas) dio **makespan idéntico (59,6702 h) y unidades por bodega
+idénticas en las 5 corridas**, desviación estándar 0,0000 en todo — ver
+`data/stability_report.csv`. Revisando el log completo de las 5 corridas
+(no solo lo que imprime el script), las TRES pasadas dieron exactamente el
+mismo gap en las 5: pasada 1 3,29%, pasada 2 3,24%, **pasada 3 63,91%** —
+esto último contradice el pendiente #7 de CLAUDE.md, que documentaba que la
+pasada 3 variaba entre corridas (4.930 t vs 9.152 t de desbalance, medido
+con una configuración anterior del modelo). Con la configuración de hoy no
+se reprodujo esa variabilidad. No investigado a fondo por qué cambió (¿el
+warm start? ¿la capacidad real por plan? ¿ambos?) — CLAUDE.md sección 10
+ítem 7 queda con una nota de que el gap sigue siendo alto (no prueba
+optimalidad) pero ya no varía, al menos en esta prueba.
+
+De paso se aprovechó esta corrida para refrescar la tabla de CLAUDE.md
+sección 3 ("Resultados verificados del caso base"), que seguía citando
+58,19 h (de antes de la capacidad real por plan) y no se había vuelto a
+correr. Con los números de hoy, la fragmentación del modelo (10) es
+**mejor** que la del plan manual (14) — antes decía "peor (pasada 2 no
+resuelve)", ya no es el caso.
