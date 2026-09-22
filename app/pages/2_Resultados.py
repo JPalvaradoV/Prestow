@@ -99,8 +99,14 @@ if resultado.plan:
             st.session_state["geometria_bodegas"] = obtener_geometria_bodegas(ruta_datos)
         huellas = st.session_state["huellas_productos"]
         geometria = st.session_state["geometria_bodegas"]
-    except Exception:
+    except Exception as exc:
         huellas, geometria = {}, {}
+        st.warning(
+            "No se pudieron leer las huellas de producto ni la geometría de "
+            "las bodegas — la Planimetría, el Balance de peso y la hoja "
+            "Planimetría del Excel no van a estar disponibles en esta "
+            f"corrida. Detalle técnico: {type(exc).__name__}: {exc}"
+        )
 
 # ---------------------------------------------------------------------------
 # Indicadores clave
