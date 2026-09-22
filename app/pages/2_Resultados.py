@@ -21,8 +21,6 @@ from components.formato import (
     formato_horas,
     formato_unidades,
     generar_excel_bytes,
-    generar_kpis_csv,
-    generar_reporte_parametros,
 )
 from components.vista_buque import (
     plot_balance_peso,
@@ -78,6 +76,25 @@ hay_referencia = makespan_manual is not None
 if hay_referencia:
     ahorro = makespan_manual - resultado.makespan
     ahorro_pct = (ahorro / makespan_manual) * 100
+
+# --- Geometría (huellas de producto + piso de bodega): se usa en varias
+# secciones de abajo (Planimetría, Balance de peso, Excel de descarga) — se
+# calcula una sola vez acá para no repetir la lectura del Excel/carpeta de
+# datos tres veces por corrida.
+huellas: dict = {}
+geometria: dict = {}
+rot: dict = {d: i + 1 for i, d in enumerate(meta.get("destinos", ["TAICHUNG", "QINGDAO", "KUNSAN", "ULSAN"]))}
+if resultado.plan:
+    try:
+        if "huellas_productos" not in st.session_state:
+            from layout_capa import obtener_geometria_bodegas, obtener_huellas
+            ruta_datos = st.session_state.get("ruta_datos", "")
+            st.session_state["huellas_productos"] = obtener_huellas(ruta_datos)
+            st.session_state["geometria_bodegas"] = obtener_geometria_bodegas(ruta_datos)
+        huellas = st.session_state["huellas_productos"]
+        geometria = st.session_state["geometria_bodegas"]
+    except Exception:
+        huellas, geometria = {}, {}
 
 # ---------------------------------------------------------------------------
 # Indicadores clave
@@ -245,17 +262,15 @@ st.divider()
 # Planimetría y secuencia de izadas
 # ---------------------------------------------------------------------------
 st.markdown("## 🗺️ Planimetría y secuencia de izadas")
+st.caption(
+    "Cada cuadrado es una unidad de carga. El recuadro punteado agrupa las "
+    "unidades que se mueven en una sola izada de la grúa — el número arriba "
+    "indica cuántas son. Lo óptimo es que diga 16 (capacidad del marco de la "
+    "grúa); un número menor es una izada parcial."
+)
 
-if resultado.plan:
-    ruta_datos = st.session_state.get("ruta_datos", "")
+if resultado.plan and huellas and geometria:
     try:
-        if "huellas_productos" not in st.session_state:
-            from layout_capa import obtener_geometria_bodegas, obtener_huellas
-            st.session_state["huellas_productos"] = obtener_huellas(ruta_datos)
-            st.session_state["geometria_bodegas"] = obtener_geometria_bodegas(ruta_datos)
-        huellas = st.session_state["huellas_productos"]
-        geometria = st.session_state["geometria_bodegas"]
-
         from layout_capa import layout_para_fila_plan
         from secuencia_izadas import calcular_secuencia
 
@@ -271,25 +286,22 @@ if resultado.plan:
             plan_sel = st.selectbox("Plan (capa)", options=planes_bodega,
                                      format_func=lambda t: f"Plan {t}")
         with col_c:
-            color_por = st.selectbox("Colorear planimetría por",
-                                      options=["Destino", "Producto", "Orden de izada"])
+            color_por = st.selectbox("Colorear planimetría por", options=["Producto", "Destino"])
 
         layout = layout_para_fila_plan(bod_sel, plan_sel, resultado.plan, geometria, huellas)
-        rot = {d: i + 1 for i, d in enumerate(meta.get("destinos", ["TAICHUNG", "QINGDAO", "KUNSAN", "ULSAN"]))}
         izadas = calcular_secuencia(layout, rot)
-
-        orden_map = None
-        if color_por == "Orden de izada":
-            orden_map = {id(u): iz.numero for iz in izadas for u in iz.unidades}
 
         largo_piso, ancho_piso = geometria.get(bod_sel, (18.30, 27.40))
         fig_plan = plot_planimetria_capa(layout, largo_piso, ancho_piso,
-                                          colorear_por=color_por, orden=orden_map)
+                                          colorear_por=color_por, izadas=izadas)
         st.plotly_chart(fig_plan, use_container_width=True, config=_PLOTLY_CONFIG)
+
+        packs_completos = sum(1 for iz in izadas if iz.cantidad == 16)
         st.caption(
-            f"Bodega {bod_sel}, plan {plan_sel}: {len(layout)} unidades · {len(izadas)} izadas. "
-            "Posiciones y orden de carga son una aproximación de visualización "
-            "(no una restricción verificada del modelo — ver CLAUDE.md, supuesto 7)."
+            f"Bodega {bod_sel}, plan {plan_sel}: {len(layout)} unidades · {len(izadas)} izadas "
+            f"({packs_completos} de 16 completas). Posiciones y orden de carga son una "
+            "aproximación de visualización (no una restricción verificada del modelo — "
+            "ver CLAUDE.md, supuesto 7)."
         )
 
         with st.expander(f"📋 Secuencia de izadas — bodega {bod_sel}, plan {plan_sel} ({len(izadas)} izadas)"):
@@ -323,16 +335,10 @@ st.caption(
     "informativo."
 )
 
-if resultado.plan:
+balance = None
+if resultado.plan and huellas and geometria:
     try:
         from balance_peso import calcular_balance
-        huellas = st.session_state.get("huellas_productos") or {}
-        geometria = st.session_state.get("geometria_bodegas") or {}
-        if not huellas or not geometria:
-            from layout_capa import obtener_geometria_bodegas, obtener_huellas
-            ruta_datos = st.session_state.get("ruta_datos", "")
-            huellas = obtener_huellas(ruta_datos)
-            geometria = obtener_geometria_bodegas(ruta_datos)
 
         balance = calcular_balance(resultado.plan, huellas, geometria=geometria)
 
@@ -400,65 +406,45 @@ st.divider()
 # Descarga
 # ---------------------------------------------------------------------------
 st.markdown("### ⬇️ Descargar resultados")
+st.caption(
+    "Un solo Excel con todo: Plan de estiba (coloreado, formato del puerto), "
+    "Detalle, Indicadores, Izadas y secuencia (todas las capas), Balance de "
+    "peso y Parámetros de la corrida."
+)
 
-if "resultado_excel" not in st.session_state:
+if "resultado_excel_completo" not in st.session_state:
     try:
-        st.session_state["resultado_excel"] = generar_excel_bytes(resultado)
-    except Exception:
-        st.session_state["resultado_excel"] = None
-
-if "resultado_kpis_csv" not in st.session_state:
-    try:
-        st.session_state["resultado_kpis_csv"] = generar_kpis_csv(resultado)
-    except Exception:
-        st.session_state["resultado_kpis_csv"] = None
-
-if "resultado_parametros_csv" not in st.session_state:
-    try:
-        st.session_state["resultado_parametros_csv"] = generar_reporte_parametros(
-            resultado, st.session_state.get("parametros_corrida", {})
+        st.session_state["resultado_excel_completo"] = generar_excel_bytes(
+            resultado,
+            huellas=huellas,
+            geometria=geometria,
+            rot=rot,
+            parametros=st.session_state.get("parametros_corrida"),
+            balance=balance,
         )
-    except Exception:
-        st.session_state["resultado_parametros_csv"] = None
+    except Exception as exc:
+        st.session_state["resultado_excel_completo"] = None
+        st.session_state["resultado_excel_error"] = f"{type(exc).__name__}: {exc}"
 
-col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
+col_dl1, col_dl2 = st.columns([2, 1])
 
 with col_dl1:
-    excel_bytes = st.session_state.get("resultado_excel")
+    excel_bytes = st.session_state.get("resultado_excel_completo")
     if excel_bytes:
         st.download_button(
-            label="📥 Plan de estiba (Excel)",
+            label="📥 Descargar reporte completo (Excel)",
             data=excel_bytes,
-            file_name="plan_estiba.xlsx",
+            file_name="prestow_reporte_completo.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
     else:
-        st.warning("No se pudo generar el Excel.")
+        st.warning(
+            "No se pudo generar el Excel. "
+            f"Detalle técnico: {st.session_state.get('resultado_excel_error', 'desconocido')}"
+        )
 
 with col_dl2:
-    kpis_csv = st.session_state.get("resultado_kpis_csv")
-    if kpis_csv:
-        st.download_button(
-            label="📥 KPIs (CSV)",
-            data=kpis_csv,
-            file_name="kpis_prestow.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-with col_dl3:
-    parametros_csv = st.session_state.get("resultado_parametros_csv")
-    if parametros_csv:
-        st.download_button(
-            label="📥 Parámetros (CSV)",
-            data=parametros_csv,
-            file_name="parametros_corrida.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-with col_dl4:
     if st.button("🔄 Ejecutar de nuevo", use_container_width=True):
         st.switch_page("pages/1_Ejecutar.py")
 

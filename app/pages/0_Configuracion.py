@@ -2,6 +2,11 @@
 Página Configuración — formularios editables de Buque, Productos, Viaje y
 Rotación (Fase 2). Guardar recalcula automáticamente capacidades.csv con
 packer_2d y deja lista una carpeta de datos para Ejecutar.
+
+Agregar y eliminar filas se hace con botones explícitos (no con la grilla de
+Streamlit en modo "dynamic"): es más accesible — funciona con teclado y
+lector de pantalla, y no depende de gestos de mouse poco descubribles como
+seleccionar una fila y presionar Supr.
 """
 
 import sys
@@ -15,10 +20,12 @@ for _p in [str(_RAIZ / "src"), str(_DIR_APP)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import pandas as pd
 import streamlit as st
 
 from components.caso_demo import cargar_caso_demo
 from components.config_editable import (
+    PUERTOS_CELULOSA_REFERENCIA,
     guardar_tablas_editables,
     leer_tablas_editables,
     recalcular_capacidades,
@@ -71,6 +78,49 @@ if "tablas_editables" not in st.session_state:
         st.error(f"No se pudieron leer los datos actuales: {type(exc).__name__}: {exc}")
         st.stop()
 
+# ---------------------------------------------------------------------------
+# Helpers de agregar / eliminar filas (versión de clave para forzar que la
+# grilla se recargue desde session_state después de un cambio programático)
+# ---------------------------------------------------------------------------
+
+def _version(nombre: str) -> int:
+    return st.session_state.setdefault("editor_version", {}).get(nombre, 0)
+
+
+def _agregar_fila(nombre: str, df_actual: pd.DataFrame, fila_nueva: dict) -> None:
+    nuevo = pd.concat([df_actual, pd.DataFrame([fila_nueva])], ignore_index=True)
+    st.session_state["tablas_editables"][nombre] = nuevo
+    st.session_state["editor_version"][nombre] = _version(nombre) + 1
+    st.rerun()
+
+
+def _eliminar_fila(nombre: str, df_actual: pd.DataFrame, idx: int) -> None:
+    nuevo = df_actual.drop(index=df_actual.index[idx]).reset_index(drop=True)
+    st.session_state["tablas_editables"][nombre] = nuevo
+    st.session_state["editor_version"][nombre] = _version(nombre) + 1
+    st.rerun()
+
+
+def _control_eliminar(nombre: str, df_actual: pd.DataFrame, etiqueta_fn) -> None:
+    """Selectbox + botón para eliminar una fila. Alternativa explícita y
+    accesible al borrado desde la grilla."""
+    if df_actual.empty:
+        st.caption("No hay filas para eliminar.")
+        return
+    col_sel, col_btn = st.columns([3, 1])
+    with col_sel:
+        idx = st.selectbox(
+            "Fila a eliminar", options=list(range(len(df_actual))),
+            format_func=lambda i: etiqueta_fn(df_actual.iloc[i]),
+            key=f"sel_eliminar_{nombre}_{_version(nombre)}",
+            label_visibility="collapsed",
+        )
+    with col_btn:
+        if st.button("🗑️ Eliminar fila", key=f"btn_eliminar_{nombre}_{_version(nombre)}",
+                     use_container_width=True):
+            _eliminar_fila(nombre, df_actual, idx)
+
+
 tablas = st.session_state["tablas_editables"]
 
 col_titulo, col_reset = st.columns([4, 1])
@@ -78,62 +128,169 @@ with col_reset:
     if st.button("↺ Restablecer al caso demo", use_container_width=True):
         cargar_caso_demo()
         st.session_state.pop("tablas_editables", None)
+        st.session_state.pop("editor_version", None)
         st.rerun()
 
 tab_buque, tab_productos, tab_viaje, tab_rotacion = st.tabs(
     ["🚢 Buque", "📦 Productos", "🧭 Viaje", "🗺️ Rotación"]
 )
 
+# ---------------------------------------------------------------------------
+# Buque
+# ---------------------------------------------------------------------------
 with tab_buque:
     st.caption("Una fila por bodega: dimensiones del piso, planes (alturas) y cuadrilla asignada.")
+    df_buque = tablas["buque"]
     buque_editado = st.data_editor(
-        tablas["buque"], num_rows="dynamic", use_container_width=True, key="editor_buque",
+        df_buque, num_rows="fixed", use_container_width=True,
+        key=f"editor_buque_{_version('buque')}",
         column_config={
-            "bodega": st.column_config.NumberColumn("Bodega", format="%d"),
+            "bodega": st.column_config.NumberColumn("Bodega", format="%d", min_value=1),
             "largo_m": st.column_config.NumberColumn("Largo (m)", format="%.2f", min_value=0.01),
             "ancho_m": st.column_config.NumberColumn("Ancho (m)", format="%.2f", min_value=0.01),
             "planes": st.column_config.NumberColumn("Planes (alturas)", format="%d", min_value=1),
             "cuadrilla": st.column_config.NumberColumn("Cuadrilla", format="%d", min_value=1),
         },
     )
+    col_add, col_del = st.columns([1, 2])
+    with col_add:
+        if st.button("➕ Agregar bodega", key="btn_agregar_buque", use_container_width=True):
+            siguiente = int(buque_editado["bodega"].max()) + 1 if not buque_editado.empty else 1
+            _agregar_fila("buque", buque_editado, {
+                "bodega": siguiente, "largo_m": 18.30, "ancho_m": 27.40,
+                "planes": 11, "cuadrilla": 1,
+            })
+    with col_del:
+        _control_eliminar("buque", buque_editado, lambda r: f"Bodega {int(r['bodega'])}")
 
+# ---------------------------------------------------------------------------
+# Productos
+# ---------------------------------------------------------------------------
 with tab_productos:
     st.caption(
         "Una fila por producto. Agregar una fila nueva dispara el recálculo del packer "
         "al guardar — no hace falta correr nada aparte."
     )
+    df_productos = tablas["productos"]
     productos_editado = st.data_editor(
-        tablas["productos"], num_rows="dynamic", use_container_width=True, key="editor_productos",
+        df_productos, num_rows="fixed", use_container_width=True,
+        key=f"editor_productos_{_version('productos')}",
         column_config={
             "producto": st.column_config.TextColumn("Producto"),
             "huella_largo_m": st.column_config.NumberColumn("Huella largo (m)", format="%.3f", min_value=0.01),
             "huella_ancho_m": st.column_config.NumberColumn("Huella ancho (m)", format="%.3f", min_value=0.01),
             "peso_t": st.column_config.NumberColumn("Peso (t/unidad)", format="%.2f", min_value=0.01),
-            "origen_dato": st.column_config.TextColumn("Origen del dato"),
+            "origen_dato": st.column_config.TextColumn(
+                "Origen del dato",
+                help=(
+                    "De dónde sale la medida de la huella de este producto. "
+                    "'verificado - plantillas ...' significa que se midió en una "
+                    "plantilla real del buque; 'SUPUESTO' significa que no había "
+                    "plantilla propia y se usó un valor estimado — la capacidad "
+                    "calculada para ese producto es tan confiable como ese supuesto."
+                ),
+            ),
         },
     )
+    col_add, col_del = st.columns([1, 2])
+    with col_add:
+        if st.button("➕ Agregar producto", key="btn_agregar_productos", use_container_width=True):
+            _agregar_fila("productos", productos_editado, {
+                "producto": f"PRODUCTO_NUEVO_{len(productos_editado) + 1}",
+                "huella_largo_m": 1.0, "huella_ancho_m": 1.0, "peso_t": 2.02,
+                "origen_dato": "ingresado por usuario — sin verificar",
+            })
+    with col_del:
+        _control_eliminar("productos", productos_editado, lambda r: str(r["producto"]))
 
-with tab_viaje:
-    st.caption("Unidades a embarcar por combinación de producto y destino.")
-    viaje_editado = st.data_editor(
-        tablas["viaje"], num_rows="dynamic", use_container_width=True, key="editor_viaje",
-        column_config={
-            "producto": st.column_config.TextColumn("Producto"),
-            "destino": st.column_config.TextColumn("Destino"),
-            "unidades": st.column_config.NumberColumn("Unidades", format="%d", min_value=0),
-        },
-    )
-
+# ---------------------------------------------------------------------------
+# Rotación (se calcula antes que Viaje: Viaje necesita la lista de destinos)
+# ---------------------------------------------------------------------------
 with tab_rotacion:
-    st.caption("Puertos de destino en orden de descarga. 1 = se descarga primero.")
+    st.caption(
+        "Puertos de destino en orden de descarga. 1 = se descarga primero. "
+        "El destino se elige de una lista para evitar errores de tipeo; si falta "
+        "un puerto, se puede escribir directamente en la celda."
+    )
+    df_rotacion = tablas["rotacion"]
+    destinos_actuales = df_rotacion["destino"].astype(str).str.strip().str.upper().tolist()
+    opciones_destino = sorted(set(PUERTOS_CELULOSA_REFERENCIA) | set(destinos_actuales))
+
     rotacion_editado = st.data_editor(
-        tablas["rotacion"], num_rows="dynamic", use_container_width=True, key="editor_rotacion",
+        df_rotacion, num_rows="fixed", use_container_width=True,
+        key=f"editor_rotacion_{_version('rotacion')}",
         column_config={
-            "destino": st.column_config.TextColumn("Destino"),
+            "destino": st.column_config.SelectboxColumn(
+                "Destino", options=opciones_destino,
+                help="Lista de referencia de puertos que reciben celulosa (no verificada por el puerto).",
+            ),
             "orden_descarga": st.column_config.NumberColumn("Orden de descarga", format="%d", min_value=1),
             "nota": st.column_config.TextColumn("Nota (opcional)"),
         },
     )
+
+    st.markdown("**Agregar puerto**")
+    col_pick, col_add, col_del = st.columns([2, 1, 2])
+    with col_pick:
+        no_usados = [p for p in PUERTOS_CELULOSA_REFERENCIA if p not in destinos_actuales]
+        puerto_nuevo = st.selectbox(
+            "Puerto a agregar", options=no_usados or PUERTOS_CELULOSA_REFERENCIA,
+            key="sel_puerto_nuevo", label_visibility="collapsed",
+        )
+    with col_add:
+        if st.button("➕ Agregar", key="btn_agregar_rotacion", use_container_width=True):
+            siguiente_orden = (
+                int(rotacion_editado["orden_descarga"].max()) + 1 if not rotacion_editado.empty else 1
+            )
+            _agregar_fila("rotacion", rotacion_editado, {
+                "destino": puerto_nuevo, "orden_descarga": siguiente_orden, "nota": "",
+            })
+    with col_del:
+        _control_eliminar("rotacion", rotacion_editado, lambda r: str(r["destino"]))
+
+# ---------------------------------------------------------------------------
+# Viaje (usa las listas ya editadas de Productos y Rotación)
+# ---------------------------------------------------------------------------
+with tab_viaje:
+    st.caption(
+        "Unidades a embarcar por combinación de producto y destino. Producto y "
+        "destino se eligen de listas desplegables (los que existen en las tablas "
+        "de Productos y Rotación) para que no se puedan escribir mal."
+    )
+    df_viaje = tablas["viaje"]
+
+    productos_disponibles = sorted(
+        set(productos_editado["producto"].astype(str).str.strip())
+        | set(df_viaje["producto"].astype(str).str.strip())
+    )
+    destinos_disponibles = sorted(
+        set(rotacion_editado["destino"].astype(str).str.strip().str.upper())
+        | set(df_viaje["destino"].astype(str).str.strip().str.upper())
+    )
+
+    if not productos_disponibles:
+        st.warning("No hay productos declarados todavía — agrega al menos uno en la pestaña Productos.")
+    if not destinos_disponibles:
+        st.warning("No hay destinos declarados todavía — agrega al menos uno en la pestaña Rotación.")
+
+    viaje_editado = st.data_editor(
+        df_viaje, num_rows="fixed", use_container_width=True,
+        key=f"editor_viaje_{_version('viaje')}",
+        column_config={
+            "producto": st.column_config.SelectboxColumn("Producto", options=productos_disponibles),
+            "destino": st.column_config.SelectboxColumn("Destino", options=destinos_disponibles),
+            "unidades": st.column_config.NumberColumn("Unidades", format="%d", min_value=0),
+        },
+    )
+    col_add, col_del = st.columns([1, 2])
+    with col_add:
+        if st.button("➕ Agregar fila", key="btn_agregar_viaje", use_container_width=True,
+                     disabled=not (productos_disponibles and destinos_disponibles)):
+            _agregar_fila("viaje", viaje_editado, {
+                "producto": productos_disponibles[0], "destino": destinos_disponibles[0], "unidades": 0,
+            })
+    with col_del:
+        _control_eliminar("viaje", viaje_editado, lambda r: f"{r['producto']} → {r['destino']}")
 
 st.divider()
 
@@ -178,8 +335,8 @@ if guardar:
         st.session_state["ruta_datos"] = carpeta
         st.session_state["ruta_capacidades"] = str(ruta_cap)
         st.session_state["metadata"] = meta_nueva
-        for clave in ("resultado", "resultado_excel", "resultado_kpis_csv",
-                      "resultado_parametros_csv", "huellas_productos", "geometria_bodegas"):
+        for clave in ("resultado", "resultado_excel_completo", "resultado_excel_error",
+                      "huellas_productos", "geometria_bodegas"):
             st.session_state.pop(clave, None)
 
         st.success(

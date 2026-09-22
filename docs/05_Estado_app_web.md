@@ -355,3 +355,145 @@ página no se cae completa.
   #1 de CLAUDE.md sección 10 ("estabilidad de la asignación entre corridas"):
   el solver es determinista con la configuración actual. No se editó
   CLAUDE.md — esa es una decisión del equipo, no algo para cambiar sin aviso.
+
+---
+
+## 9. Correcciones de accesibilidad y UX (misma sesión, después de la Fase 2)
+
+Reportadas por el usuario después de probar la Fase 2 en Opera:
+
+- **Borrado de filas no funcionaba en Configuración.** `st.data_editor` con
+  `num_rows="dynamic"` permite agregar (muy descubrible: fila en blanco al
+  final) pero borrar requiere seleccionar la fila y una tecla, poco
+  descubrible y con comportamiento inconsistente entre navegadores. Se
+  reemplazó por botones explícitos "➕ Agregar" / selector + "🗑️ Eliminar
+  fila" en las 4 tablas (`app/pages/0_Configuracion.py`), con
+  `num_rows="fixed"` en la grilla (edición de celdas sí, agregar/quitar filas
+  no). Requirió un patrón de versión de `key` (`editor_buque_{version}`) para
+  forzar que la grilla se recargue desde `session_state` después de un
+  cambio programático — sin eso, la grilla conserva su estado interno viejo
+  aunque el `value=` que se le pasa haya cambiado.
+- **Orden de bodegas invertido en Configuración** (aparecía 8,7,6...1 — así
+  las lista el Excel del puerto). `leer_tablas_editables()` ahora ordena por
+  bodega ascendente al leer (`app/components/config_editable.py`); no afecta
+  al modelo, que ya ordena `BODEGAS` internamente.
+- **Viaje y Rotación con listas desplegables** en vez de texto libre:
+  `st.column_config.SelectboxColumn` para producto/destino en Viaje (usa las
+  listas de Productos/Rotación ya editadas en la misma sesión) y para
+  destino en Rotación (lista curada `PUERTOS_CELULOSA_REFERENCIA` en
+  `config_editable.py` — puertos importantes que reciben celulosa, compilada
+  por Claude, **no verificada por el puerto**, formato uppercase igual que
+  los 4 existentes).
+- **Límite de tiempo del solver**: slider de `1_Ejecutar.py` subido de
+  máximo 300 s a 360 s por pasada (hasta 12 min totales entre pasadas 1 y 2).
+- **Tooltip en "Origen del dato"** (columna de Productos): explica que
+  documenta si la huella se midió en una plantilla real o es un supuesto.
+- **Guía de navegación en Inicio** (`app/app.py`): tarjetas explicando qué
+  hace cada página (Configuración, Ejecutar, Resultados) en lenguaje simple,
+  con nota de dónde está el menú lateral.
+
+Bug encontrado y corregido en el camino: un `.replace(",", ".")` aplicado
+sobre un f-string con concatenación implícita de varios literales convertía
+también las comas de puntuación de la oración en puntos (mensaje de éxito al
+guardar en Configuración). Se corrigió usando `formato_unidades()` solo
+sobre el número, no sobre todo el mensaje.
+
+---
+
+## 10. Pasada 3: balance de peso — investigación completa (misma sesión)
+
+A pedido explícito del dueño del proyecto se reabrió la decisión cerrada de
+CLAUDE.md sección 6 ("no agregar restricciones de peso"). Ver el detalle de
+la decisión y el resultado final en CLAUDE.md sección 6. Acá queda el
+registro completo de la investigación, para no repetir el camino si alguien
+quiere subir `ETAPAS_BALANCE_PESO` en el futuro.
+
+### Qué se construyó
+
+- `src/modelo_prestow.py`: nuevo global `PESO[p]` (peso por unidad, ya se
+  leía `peso_t` del Excel/CSV pero se descartaba), nueva pasada 3
+  lexicográfica (`preparar_pasada3()`), nuevas variables `peso_max[k]` /
+  `peso_min[k]` por etapa del viaje, nueva restricción (10). La restricción
+  (9) de ruptura de simetría (ver su propio comentario "OJO": asume bodegas
+  gemelas intercambiables) se retira específicamente antes de resolver la
+  pasada 3, porque ahí es donde molesta — en las pasadas 1 y 2 sigue activa
+  y ayuda mucho al solver.
+- `src/api.py`: `ResultadoCorrida` gana el campo `excel_bytes` (el Excel
+  oficial de `modelo_prestow.exportar_excel()`, generado con el lock tomado
+  porque esa función lee globales del módulo). Nueva función
+  `_resolver_con_warm_start()`: como PuLP no expone warm start para HiGHS en
+  esta versión (3.3.2), reproduce a mano la secuencia interna de
+  `pulp.HiGHS.actualSolve()` para poder inyectar la solución de la pasada 2
+  como punto de partida de la pasada 3, usando `highspy.HighsSolution`
+  directamente.
+- `app/components/formato.py`: `generar_excel_bytes()` reescrito para partir
+  del Excel oficial del modelo y agregarle hojas ("Izadas y secuencia" con
+  TODAS las capas, "Balance de peso", "Parámetros de la corrida") — antes
+  generaba su propio Excel simplificado de 2 hojas y había 2 CSV sueltos
+  además. Ahora es un solo archivo de descarga.
+- `app/components/vista_buque.py`: `plot_planimetria_capa()` rediseñado —
+  bordes oscuros + hueco entre unidades (antes borde blanco fino, difícil de
+  distinguir "paquetes" individuales), y recuadros punteados con el conteo
+  de cada izada superpuestos (packs de 16, como pidió el usuario). Se sacó
+  el modo de color "Orden de izada" (redundante con el nuevo overlay
+  siempre visible).
+
+### Cronología de la investigación (todo con el caso base Kiwi Arrow)
+
+| # | Configuración | Resultado |
+|---|---|---|
+| 1 | 4 etapas, sin warm start, 90 s | Pasada 1 ni siquiera resuelve (la ruptura de simetría desactivada globalmente por error de diseño inicial frenaba TODO, no solo la pasada 3) |
+| 2 | 4 etapas, sin warm start, 45 s — **con la simetría restaurada para pasadas 1-2** | Pasadas 1-2 OK; pasada 3 sin solución factible |
+| 3 | 4 etapas, sin warm start, 180 s | Pasadas 1-2 OK (makespan 58,10 h); pasada 3 sin solución factible |
+| 4 | 4 etapas, sin warm start, 900 s | Pasadas 1-2 OK (makespan 57,78 h, mejor); pasada 3 **sigue sin solución factible tras 45 min** — no era falta de tiempo |
+| 5 | 1 etapa, sin warm start, 180 s | Pasada 3 sin solución factible (versión 4x más chica y tampoco alcanza) |
+| 6 | 1 etapa, **con warm start**, 180 s | **Pasada 3 converge**: gap 16,1%, desbalance 4.930,82 t |
+| 7 | 4 etapas, con warm start, 180 s | Pasada 3 encuentra factible (a diferencia de sin warm start) pero gap 77,4% |
+| 8 | 4 etapas, con warm start, 600 s dedicados a la pasada 3 | **Primal bound idéntico** a la corrida de 180 s (30.031,34) — el solver exploró 5x más nodos sin mejorar nada: no es un problema de tiempo |
+| 9 | 4 etapas, con warm start, tolerancia de pasada 2 aflojada 10x (2→20), 180 s | Mejora marginal (27.853,78 t, gap 75,6%) — la tolerancia no era el cuello de botella real |
+| 10 | 1 etapa, con warm start, 180 s (repetición de la config final) | 9.152,62 t, gap 54,6% — **distinto** al de la fila 6 con la misma configuración: HiGHS no es determinista cuando no prueba optimalidad |
+
+### Diagnóstico
+
+1. **Sin warm start, la pasada 3 no encuentra ningún punto factible por su
+   cuenta**, ni con mucho tiempo. PuLP no expone warm start para HiGHS en la
+   versión instalada (`pulp.HiGHS.actualSolve()` reconstruye el modelo desde
+   cero en cada `.solve()`), así que hubo que llamar a los métodos internos
+   del solver a mano (`createAndConfigureSolver` → `buildSolverModel` →
+   inyectar `highspy.HighsSolution` → `callSolver` → `findSolutionValues`).
+   Con eso, la pasada 3 arranca desde la solución (ya factible) de la
+   pasada 2 en vez de buscar una desde cero.
+2. **Con warm start, la pasada 3 de 4 etapas SÍ encuentra factibilidad, pero
+   se estanca**: ni 900 s de tiempo ni una tolerancia 10x más floja la
+   sacan de un gap de 75-77%. La hipótesis más probable es que la relajación
+   LP de "minimizar la suma de rangos máximo-menos-mínimo en 4 etapas, sin
+   ruptura de simetría" es intrínsecamente débil para este solver —
+   arreglarlo de verdad necesitaría desigualdades válidas más sofisticadas
+   (trabajo de investigación en optimización, no un ajuste de parámetros).
+3. **La versión de 1 sola etapa (carga inicial) sí converge razonablemente**
+   (gap ~16-55% según la corrida — variable, ver más abajo), muy por encima
+   de las 4 etapas. Es además la métrica que ya se había medido antes del
+   proyecto (36,8% vs 18,9%), solo que ahora el modelo la optimiza en vez de
+   solo medirla.
+4. **El resultado exacto de la pasada 3 varía entre corridas** del mismo
+   caso con los mismos parámetros (filas 6 y 10 de la tabla: 4.930,82 t vs
+   9.152,62 t). A diferencia del resto del modelo (determinista, ver
+   `data/stability_report.csv`), la pasada 3 nunca prueba optimalidad dentro
+   del tiempo estándar, así que el punto exacto donde el solver se detiene
+   depende del no-determinismo interno de HiGHS (orden de exploración,
+   timing). El KPI `balance_peso_desbalance_ton` solo se informa cuando la
+   pasada 3 realmente resolvió (`pasada3_exitosa=True` en `api.py`); si no,
+   no se muestra un número — mostrar los valores sin optimizar de la pasada
+   2 hubiera sido un número sin sentido (se detectó y corrigió esto en el
+   camino: la primera versión mostraba 29.845,5 t, que no era un balance
+   real).
+
+### Configuración final
+
+`USAR_BALANCE_PESO = True`, `ETAPAS_BALANCE_PESO = 1` (solo la carga
+inicial), `TOLERANCIA_PASADA3 = 2.0` (valor original, la versión floja no
+ayudó lo suficiente para justificar el riesgo de empeorar la fragmentación),
+`limite_segundos_balance` por defecto igual a `limite_segundos` (no hace
+falta más tiempo con 1 etapa). Antes de subir `ETAPAS_BALANCE_PESO`, resolver
+el problema de fondo de la relajación débil — ya se probó que más tiempo y
+más tolerancia no alcanzan por sí solos.

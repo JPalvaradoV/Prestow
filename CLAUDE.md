@@ -12,7 +12,7 @@ El modelo de optimización está **implementado, corrido con datos reales y vali
 
 ## 2. Lo que ya existe y funciona
 
-- **`src/modelo_prestow.py`** — modelo MILP completo (PuLP + HiGHS), dos pasadas lexicográficas, exporta `plan_estiba.xlsx` con formato tipo prestow del puerto.
+- **`src/modelo_prestow.py`** — modelo MILP completo (PuLP + HiGHS), tres pasadas lexicográficas (makespan → izadas+fragmentación → balance de peso, ver sección 6), exporta `plan_estiba.xlsx` con formato tipo prestow del puerto.
 - **`src/packer_2d.py`** — cálculo de capacidad por geometría con tres patrones (uniforme, dos bloques, cuatro bloques). Corre una vez, produce `data/capacidades.csv`.
 - **`data/datos_entrada_kiwi_arrow.xlsx`** — caso base editable, cinco hojas: Instrucciones, Viaje, Rotación, Buque, Productos.
 - **`data/capacidades.csv`** — 40 combinaciones (8 bodegas × 5 productos), generadas por el packer.
@@ -67,14 +67,14 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 
 ## 6. Decisiones cerradas — asumir, no debatir
 
-- **Método**: MILP exacto con límite de tiempo, dos pasadas lexicográficas. No metaheurística.
+- **Método**: MILP exacto con límite de tiempo, tres pasadas lexicográficas (makespan → izadas+fragmentación → balance de peso). No metaheurística.
 - **Solver**: HiGHS en producción (libre, sin licencia), CBC como respaldo. **CPLEX/Gurobi no se pueden desplegar en hosting público.**
 - **Librería**: PuLP.
 - **Packer**: módulo separado, precalculado, tres patrones. No es fórmula cerrada.
 - **Restricción 4 (no-overstowage)**: solo entre planes adyacentes — demostrado equivalente, verificado con 211.000 configuraciones.
 - **La bandera `SEPARAR_ROTACION_EMPATADA` fue eliminada**. No reintroducirla sin releer por qué se descartó.
 - **Merma de capacidad = 0**, avalado por el profesor como supuesto declarado.
-- **No agregar restricciones de peso ni distribución al modelo.** Se midió y no hay caso: dispersión relativa 36,8% del modelo vs 18,9% del plan manual, sin evidencia de problema operativo. En la web, el peso se muestra solo como panel informativo.
+- **Balance de peso: decisión reabierta el 21 de septiembre de 2026, a pedido explícito del dueño del proyecto.** Antes decía "no agregar restricciones de peso ni distribución al modelo" — la razón seguía siendo válida (dispersión relativa 36,8% del modelo vs 18,9% del plan manual, sin evidencia de problema operativo), pero el dueño del proyecto pidió agregarla igual: la web genera un plan desde cero para alguien sin plan de referencia, y prefiere pagar makespan por un buque mejor balanceado. Implementado como **pasada 3 lexicográfica** (después de izadas+fragmentación) en `modelo_prestow.py`, activa por defecto (`USAR_BALANCE_PESO = True`). Balancea la carga inicial (zarpe) entre bodegas — **no** el trim puerto a puerto: se investigó balancear las 4 etapas del viaje completo y el solver nunca converge bien (se estanca en 75-77% de gap pase lo que se pruebe: sin warm start no encuentra factibilidad, con warm start encuentra pero no mejora ni con 900 s ni con tolerancia más floja). El detalle completo de la investigación está en `docs/05_Estado_app_web.md`. **No subir `ETAPAS_BALANCE_PESO` por encima de 1 sin resolver antes el problema de fondo** (relajación LP débil de la pasada 3, no un tema de tiempo ni de parámetros).
 
 ## 7. Los 9 supuestos, con su estado actual
 
@@ -139,6 +139,7 @@ En orden de prioridad:
 4. **La pasada 2 no resuelve en 150-180 s** — por eso la fragmentación quedó sin optimizar.
 5. **El packer no distingue altura** — asume los 11 planes iguales.
 6. **Pruebas automatizadas** — todo se verifica a mano.
+7. **La pasada 3 (balance de peso) no converge de forma estable entre corridas.** A diferencia del resto del modelo (determinista, ver `data/stability_report.csv`), la pasada 3 nunca prueba optimalidad dentro del tiempo estándar (gap ~16-55% visto en pruebas, varía de corrida en corrida por el no-determinismo de HiGHS). El resultado siempre es un balance real y válido, pero no comparable número a número entre dos corridas del mismo caso. No confundir esto con el ítem 1 (que es sobre el resto del modelo, ya determinista).
 
 ## 11. Convenciones de código
 
@@ -154,7 +155,7 @@ En orden de prioridad:
 ## 12. Qué NO hacer
 
 - **No modificar `modelo_prestow.py` ni `packer_2d.py`** sin explicar por qué en un commit separado y correr las verificaciones sobre el caso base. El código actual ya está validado.
-- **No agregar restricciones de peso ni de distribución al modelo.** El balance se muestra en la web como panel informativo aparte.
+- **Balance de peso: ver sección 6 — decisión reabierta.** Ahora SÍ hay una restricción de peso en el modelo (pasada 3, solo la carga inicial). El panel "Balance de peso" de la web sigue mostrando el estado real logrado, informativo.
 - **No inventar cifras** para completar ejemplos o tests. Si falta un dato, marca el test como pendiente.
 - **No usar solvers con licencia** (CPLEX, Gurobi, Mosek). Solo HiGHS o CBC.
 - **No introducir dependencias nuevas** sin agregarlas a `requirements.txt` y explicarlo en el commit.

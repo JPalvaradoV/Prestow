@@ -24,6 +24,29 @@ COLUMNAS_PRODUCTOS = ["producto", "huella_largo_m", "huella_ancho_m", "peso_t", 
 COLUMNAS_ROTACION = ["destino", "orden_descarga", "nota"]
 COLUMNAS_VIAJE = ["producto", "destino", "unidades"]
 
+# Lista de referencia de puertos que reciben celulosa/madera en rollo, para el
+# desplegable de Rotación. NO es un dato verificado por el puerto ni por el
+# modelo: es una lista de conveniencia compilada por región para evitar
+# errores de tipeo al escribir el nombre. Incluye los cuatro puertos del caso
+# base (TAICHUNG, QINGDAO, KUNSAN, ULSAN). Formato: nombre de la ciudad
+# portuaria en mayúsculas, sin espacios, igual que los datos existentes. Si
+# falta un puerto, se agrega a esta lista.
+PUERTOS_CELULOSA_REFERENCIA = [
+    # Taiwán
+    "TAICHUNG", "KAOHSIUNG",
+    # China
+    "QINGDAO", "SHANGHAI", "NINGBO", "ZHANGJIAGANG", "NANTONG",
+    "LIANYUNGANG", "XINGANG", "DALIAN",
+    # Corea del Sur
+    "ULSAN", "KUNSAN", "BUSAN", "INCHEON",
+    # Japón
+    "YOKOHAMA", "NAGOYA", "OSAKA",
+    # India
+    "CHENNAI", "MUNDRA",
+    # Europa
+    "ROTTERDAM", "ANTWERP",
+]
+
 
 def _filas_hoja(ws, columnas: list[str]) -> list[dict]:
     """Lee una hoja de Excel saltando títulos, hasta la primera fila vacía."""
@@ -67,7 +90,11 @@ def leer_tablas_editables(ruta_datos: str | Path) -> dict[str, pd.DataFrame]:
     buque["bodega"] = buque["bodega"].astype(int)
     buque["planes"] = buque["planes"].astype(int)
     buque["cuadrilla"] = buque["cuadrilla"].astype(int)
+    # El Excel del caso base lista las bodegas de la 8 a la 1 (así las anota
+    # el puerto); para editar es mas intuitivo de la 1 a la 8.
+    buque = buque.sort_values("bodega").reset_index(drop=True)
     rotacion["orden_descarga"] = rotacion["orden_descarga"].astype(int)
+    rotacion = rotacion.sort_values("orden_descarga").reset_index(drop=True)
     viaje["unidades"] = viaje["unidades"].astype(int)
 
     return {"buque": buque, "productos": productos, "rotacion": rotacion, "viaje": viaje}

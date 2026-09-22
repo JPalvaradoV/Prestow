@@ -87,6 +87,24 @@ HUELLA = {
     "CELCO_UKP":   0.84 * 1.47,   # SUPUESTO: sin plantilla propia del Kiwi Arrow
 }
 
+# peso[p]: peso de una unidad del producto p, en toneladas. Se usa solo para
+# el termino de balance de peso (restriccion 10, seccion USAR_BALANCE_PESO
+# mas abajo) -- no afecta capacidad, izadas ni makespan.
+# Dato real del caso base: las cinco huellas verificadas del Kiwi Arrow
+# declaran 2.02 t/unidad, constante entre productos.
+PESO = {
+    "N_ALDEA_EKP": 2.02,
+    "N_ALDEA_BKP": 2.02,
+    "ARAUCO_EKP":  2.02,
+    "ARAUCO_BKP":  2.02,
+    "CELCO_UKP":   2.02,
+}
+
+# Respaldo si un producto no tiene peso declarado (por ejemplo datos de un
+# caso editado a mano sin llenar la columna peso_t). Mismo valor que el caso
+# base para no introducir un salto artificial.
+PESO_UNIDAD_RESPALDO = 2.02
+
 # Geometria del piso por bodega, en metros. Verificado del caso base.
 # La bodega 1 es mas pequena que el resto.
 PISO = {h: (18.30, 27.40) for h in BODEGAS}
@@ -211,6 +229,17 @@ SOLVER = "HiGHS"          # "HiGHS" o "CBC"
 # asumir que 120 s alcanza.
 LIMITE_SEGUNDOS = 120
 
+# Limite de tiempo propio para la pasada 3 (balance de peso). Con la
+# configuracion final (ETAPAS_BALANCE_PESO=1, ver su comentario) converge
+# bien en el mismo tiempo que las pasadas 1 y 2, asi que no hace falta darle
+# mas -- se probo con las 4 etapas completas y ni 900 s alcanzaban.
+#
+# OJO: esta funcion main() (linea de comandos) NO usa warm start -- esa
+# mejora vive en api.py, pensada para la web. Sin warm start, esta pasada
+# probablemente no encuentre ninguna solucion factible. Queda documentado
+# como pendiente si se quiere que la CLI tenga el mismo balance que la web.
+LIMITE_SEGUNDOS_BALANCE = LIMITE_SEGUNDOS
+
 # --- Objetivo secundario -----------------------------------------------------
 # El makespan es el objetivo primario. Pero entre todas las soluciones con el
 # mismo makespan hay unas mejores que otras, y el solver devuelve una cualquiera.
@@ -254,6 +283,80 @@ PESO_PLANES = 1.0
 # Con 0 es lexicografica pura: el makespan no puede empeorar nada.
 # Con 2 se aceptan hasta 2 izadas mas (unos 14 minutos) si eso mejora lo demas.
 TOLERANCIA_IZADAS = 2
+
+# --- Balance de peso (pasada 3, opcional) ------------------------------------
+# Lexicografica despues de izadas+fragmentacion: para cada ETAPA del viaje
+# calcula cuanto peso queda en cada bodega y minimiza la diferencia entre la
+# bodega mas y la menos cargada de esa etapa, sumada sobre todas las etapas
+# consideradas (ver ETAPAS_BALANCE_PESO).
+#
+# REABRE UNA DECISION CERRADA (ver CLAUDE.md seccion 6, y el historial de
+# docs/05_Estado_app_web.md): se habia medido que sin esta restriccion el
+# modelo tiene 36.8% de dispersion de densidad contra 18.9% del plan manual,
+# sin evidencia de problema operativo, y se decidio no restringir peso.
+# Se reactiva a pedido explicito del dueno del proyecto: la web genera un
+# plan desde cero para alguien sin plan de referencia, no solo reproduce el
+# plan manual, y prefiere pagar makespan por un buque mejor balanceado.
+#
+# OJO CRITICO: con esto activo, la restriccion (9) de ruptura de simetria
+# deja de ser valida (ver su propio comentario "OJO" mas abajo: exige que
+# una bodega de cada par gemelo cargue "al menos tanto como" la otra, lo que
+# le impide al modelo balancear peso ENTRE esas dos bodegas). preparar_
+# pasada3() la retira del problema justo antes de resolver esa pasada.
+USAR_BALANCE_PESO = True
+
+# Cuantas etapas del viaje se balancean. k=0 es la carga inicial (zarpe, todo
+# a bordo); k=1 es el tramo despues de descargar en el primer puerto, y asi
+# sucesivamente hasta len(DESTINOS)-1 (el ultimo tramo, solo con la carga del
+# ultimo puerto).
+#
+# HISTORIAL DE LA INVESTIGACION (sesion del 21 de septiembre de 2026):
+#   1. Con las 4 etapas completas y SIN warm start: el solver no encontraba
+#      NINGUNA solucion factible para esta pasada ni en 180 s ni en 900 s.
+#      No era falta de tiempo: sin la ruptura de simetria (ver OJO arriba)
+#      HiGHS no lograba ni siquiera tropezar por su cuenta con un punto
+#      factible, pese a que la solucion de la pasada 2 ya es una.
+#   2. Se agrego warm start (ver api._resolver_con_warm_start: PuLP no lo
+#      expone para HiGHS de fabrica en esta version, asi que resolver_
+#      prestow() arma la llamada a mano). Con eso, las 4 etapas SI
+#      encuentran una solucion factible -- pero se estanca ahi: 180 s, 600 s
+#      y hasta con la tolerancia de la pasada 2 mucho mas floja (20 en vez
+#      de 2), el gap se quedo pegado entre 75% y 77%. El primal bound de la
+#      corrida de 180 s y la de 600 s dio EXACTAMENTE igual (30031.34): el
+#      solver exploro muchisimos mas nodos sin encontrar nada mejor. La
+#      causa mas probable es que "minimizar la suma de rangos max-min en 4
+#      etapas, sin ruptura de simetria" tiene una relajacion LP demasiado
+#      debil para este solver -- arreglarlo de verdad necesitaria
+#      desigualdades validas mas sofisticadas, no ajustar parametros.
+#   3. Con 1 SOLA etapa (la carga inicial, que es ademas la que ya se habia
+#      medido antes del proyecto: 36.8% vs 18.9%), con warm start y el
+#      tiempo estandar (180 s), el gap converge a ~16% -- un resultado real
+#      y razonablemente bueno, muy por encima de las 4 etapas.
+#
+# CONCLUSION: se deja en 1 SOLA etapa (departure/carga inicial) como
+# configuracion final. Antes de volver a subir este numero, hay que resolver
+# el problema de fondo de la relajacion debil, no solo darle mas tiempo o
+# tolerancia -- ya se probo que ninguna de las dos alcanza.
+ETAPAS_BALANCE_PESO: int | None = 1
+
+
+def _n_etapas_balance() -> int:
+    """Cuantas etapas balancear: todas las de la rotacion actual, o el tope
+    de ETAPAS_BALANCE_PESO si es mas chico."""
+    if ETAPAS_BALANCE_PESO is None:
+        return len(DESTINOS)
+    return min(ETAPAS_BALANCE_PESO, len(DESTINOS))
+
+
+# Solo hay un termino en la pasada 3 hoy; este peso no compite con nada.
+# Queda declarado por si se agrega otro termino a esa pasada en el futuro.
+PESO_BALANCE = 1.0
+
+# Tolerancia ABSOLUTA (en unidades del objetivo ponderado de la pasada 2:
+# izadas + 10 x bodegas de fragmentacion) al fijar ese objetivo para poder
+# pasar a la pasada 3. Mismo criterio que TOLERANCIA_IZADAS: un margen fijo,
+# no relativo, para que no dependa de cuanto logro la pasada 2.
+TOLERANCIA_PASADA3 = 2.0
 
 # Fraccion minima del area que debe ocupar una capa para poder abrir la de
 # encima. Con 0 se desactiva.
@@ -307,7 +410,7 @@ def cargar_desde_csv(carpeta):
     datos faltantes: las reporta para que el usuario las vea.
     """
     global BODEGAS, PLANES, PRODUCTOS, DESTINOS, CUADRILLAS
-    global ROT, HUELLA, PISO, AREA, DEMANDA
+    global ROT, HUELLA, PESO, PISO, AREA, DEMANDA
 
     ruta = Path(carpeta)
     avisos = []
@@ -352,11 +455,14 @@ def cargar_desde_csv(carpeta):
 
     # --- productos ---
     HUELLA = {}
+    PESO = {}
     PRODUCTOS = []
     for r in leer("productos_*.csv"):
         p = r["producto"].strip()
         PRODUCTOS.append(p)
         HUELLA[p] = float(r["huella_largo_m"]) * float(r["huella_ancho_m"])
+        peso_t = r.get("peso_t")
+        PESO[p] = float(peso_t) if peso_t not in (None, "") else PESO_UNIDAD_RESPALDO
         origen = (r.get("origen_dato") or "").upper()
         if "SUPUESTO" in origen:
             avisos.append(f"La huella de {p} es un SUPUESTO, no un dato verificado")
@@ -401,7 +507,7 @@ def cargar_desde_excel(ruta_excel):
     Devuelve la lista de advertencias encontradas.
     """
     global BODEGAS, PLANES, PRODUCTOS, DESTINOS, CUADRILLAS
-    global ROT, HUELLA, PISO, AREA, DEMANDA
+    global ROT, HUELLA, PESO, PISO, AREA, DEMANDA
 
     from openpyxl import load_workbook
 
@@ -462,12 +568,15 @@ def cargar_desde_excel(ruta_excel):
 
     # --- Productos ---
     HUELLA = {}
+    PESO = {}
     PRODUCTOS = []
     for r in filas("Productos", ["producto", "huella_largo_m", "huella_ancho_m",
                                  "peso_t", "origen_dato"]):
         p_ = str(r["producto"]).strip()
         PRODUCTOS.append(p_)
         HUELLA[p_] = float(r["huella_largo_m"]) * float(r["huella_ancho_m"])
+        peso_t = r.get("peso_t")
+        PESO[p_] = float(peso_t) if peso_t not in (None, "") else PESO_UNIDAD_RESPALDO
         if "SUPUESTO" in str(r.get("origen_dato") or "").upper():
             avisos.append(f"La huella de {p_} es un SUPUESTO, no un dato verificado")
 
@@ -634,6 +743,17 @@ def construir_modelo():
         (h, d): pulp.LpVariable(f"v_{h}_{d}", cat="Binary")
         for h in BODEGAS for d in DESTINOS
     }
+
+    # peso_max[k], peso_min[k]: bodega mas y menos cargada (en toneladas) en
+    # la etapa k del viaje. k=0 es la carga inicial (nada descargado aun);
+    # k=len(DESTINOS)-1 es el ultimo tramo, con solo la carga del ultimo
+    # puerto a bordo. Solo se crean si USAR_BALANCE_PESO esta activo.
+    peso_max: dict[int, "pulp.LpVariable"] = {}
+    peso_min: dict[int, "pulp.LpVariable"] = {}
+    if USAR_BALANCE_PESO:
+        for k in range(_n_etapas_balance()):
+            peso_max[k] = pulp.LpVariable(f"peso_max_{k}", lowBound=0, cat="Continuous")
+            peso_min[k] = pulp.LpVariable(f"peso_min_{k}", lowBound=0, cat="Continuous")
 
     # --- Funcion objetivo ---
     # En la pasada 1 solo se minimiza el makespan. El objetivo secundario se
@@ -839,6 +959,14 @@ def construir_modelo():
     # OJO: solo es valido si las bodegas son realmente intercambiables. Si el
     # armador fijara tonelaje por bodega, o si hubiera restricciones de trim,
     # dejarian de serlo y esta restriccion cortaria soluciones validas.
+    #
+    # Con USAR_BALANCE_PESO activo, esa restriccion es exactamente una
+    # restriccion de trim, y forzar "h1 carga al menos tanto como h2" le
+    # impediria al modelo balancear peso ENTRE las dos bodegas gemelas — pero
+    # SOLO en la pasada 3: en las pasadas 1 y 2 (makespan, izadas,
+    # fragmentacion) la simetria no molesta y ayuda mucho al solver a
+    # encontrar factibilidad rapido. Se deja activa aca y preparar_pasada3()
+    # la retira del problema justo antes de resolver esa pasada.
     if ROMPER_SIMETRIA:
         for g, bodegas_g in CUADRILLAS.items():
             for i in range(len(bodegas_g) - 1):
@@ -851,7 +979,23 @@ def construir_modelo():
                     f"simetria_{h1}_{h2}",
                 )
 
-    return prob, x, y, z, w, v, T_max, combos
+    # --- (10) Balance de peso por etapa del viaje (opcional) ---
+    # peso_restante[h,k]: toneladas que quedan en la bodega h en la etapa k,
+    # es decir la carga de los destinos que ROT ubica despues de la etapa k
+    # (todavia no descargados). Ver USAR_BALANCE_PESO mas arriba.
+    if USAR_BALANCE_PESO:
+        for k in range(_n_etapas_balance()):
+            for h in BODEGAS:
+                peso_restante_hk = pulp.lpSum(
+                    x[(h, t, p, d)] * PESO.get(p, PESO_UNIDAD_RESPALDO)
+                    for t in PLANES
+                    for (p, d) in combos
+                    if ROT[d] > k
+                )
+                prob += (peso_max[k] >= peso_restante_hk, f"balance_max_{h}_{k}")
+                prob += (peso_min[k] <= peso_restante_hk, f"balance_min_{h}_{k}")
+
+    return prob, x, y, z, w, v, T_max, combos, peso_max, peso_min
 
 
 # =============================================================================
@@ -1012,6 +1156,61 @@ def preparar_pasada2(prob, z, w, v, T_max, makespan_optimo):
         return False              # no hay nada secundario que optimizar
 
     prob.setObjective(pulp.lpSum(terminos))
+    return True
+
+
+def preparar_pasada3(prob, z, w, v, peso_max, peso_min, valor_pasada2):
+    """
+    Prepara la tercera pasada de la optimizacion lexicografica: balance de
+    peso por etapa del viaje (ver USAR_BALANCE_PESO).
+
+    Fija el objetivo de la pasada 2 (izadas + fragmentacion ponderadas) en su
+    valor optimo mas una tolerancia absoluta, y cambia el objetivo a
+    minimizar el desbalance de peso. El makespan sigue fijado desde la
+    pasada 2 (esa restriccion no se toca aca).
+
+    Tambien retira del problema la restriccion (9) de ruptura de simetria
+    (ver su comentario "OJO" en construir_modelo): esa restriccion ayuda al
+    solver en las pasadas 1 y 2, pero en esta pasada le impediria balancear
+    peso entre bodegas gemelas.
+
+    Devuelve False si USAR_BALANCE_PESO esta apagado, o si construir_modelo()
+    no armo peso_max/peso_min (mismo flag).
+    """
+    if not USAR_BALANCE_PESO or not peso_max:
+        return False
+
+    if ROMPER_SIMETRIA:
+        for bodegas_g in CUADRILLAS.values():
+            for i in range(len(bodegas_g) - 1):
+                h1, h2 = bodegas_g[i], bodegas_g[i + 1]
+                nombre = f"simetria_{h1}_{h2}"
+                if nombre in prob.constraints:
+                    del prob.constraints[nombre]
+
+    terminos_pasada2 = []
+    if USAR_IZADAS:
+        terminos_pasada2.append(PESO_IZADAS * pulp.lpSum(
+            z[(h, t)] for h in BODEGAS for t in PLANES
+        ))
+    if USAR_FRAGMENTACION:
+        terminos_pasada2.append(PESO_FRAGMENTACION * pulp.lpSum(
+            v[(h, d)] for h in BODEGAS for d in DESTINOS
+        ))
+    if USAR_PLANES:
+        terminos_pasada2.append(PESO_PLANES * pulp.lpSum(
+            w[(h, t)] for h in BODEGAS for t in PLANES
+        ))
+
+    if terminos_pasada2:
+        prob += (
+            pulp.lpSum(terminos_pasada2) <= valor_pasada2 + TOLERANCIA_PASADA3,
+            "secundario_fijado",
+        )
+
+    prob.setObjective(
+        PESO_BALANCE * pulp.lpSum(peso_max[k] - peso_min[k] for k in peso_max)
+    )
     return True
 
 
@@ -1525,12 +1724,14 @@ def main(carpeta_datos=None, interactivo=True):
         return
 
     print("Datos correctos. Construyendo el modelo...")
-    prob, x, y, z, w, v, T_max, combos = construir_modelo()
+    prob, x, y, z, w, v, T_max, combos, peso_max, peso_min = construir_modelo()
     print(f"  Variables    : {len(prob.variables()):,}")
     print(f"  Restricciones: {len(prob.constraints):,}")
 
+    n_pasadas = 3 if USAR_BALANCE_PESO else 2
+
     # --- Pasada 1: minimizar el makespan ---
-    print(f"\nPasada 1 de 2: minimizando el makespan (limite {LIMITE_SEGUNDOS} s)...")
+    print(f"\nPasada 1 de {n_pasadas}: minimizando el makespan (limite {LIMITE_SEGUNDOS} s)...")
     res1 = resolver(prob)
     if T_max.value() is None:
         print(f"  Sin solucion. Estado PuLP: {res1['estado_pulp']}")
@@ -1544,7 +1745,7 @@ def main(carpeta_datos=None, interactivo=True):
     hay_secundario = preparar_pasada2(prob, z, w, v, T_max, makespan_pasada1)
     if hay_secundario:
         cota = makespan_pasada1 + TOLERANCIA_IZADAS * TIEMPO_CICLO
-        print(f"\nPasada 2 de 2: makespan acotado a <= {cota:.2f} h "
+        print(f"\nPasada 2 de {n_pasadas}: makespan acotado a <= {cota:.2f} h "
               f"(+{TOLERANCIA_IZADAS} izadas de tolerancia)")
         print(f"  Minimizando terminos secundarios (limite {LIMITE_SEGUNDOS} s)...")
         solucion_pasada1 = capturar_solucion(prob)
@@ -1563,6 +1764,31 @@ def main(carpeta_datos=None, interactivo=True):
             print(f"  Makespan final: {T_max.value():.2f} h")
             describir_resolucion(res2, "Pasada 2")
             res_final = res2
+
+            # --- Pasada 3: balance de peso por etapa del viaje ---
+            valor_pasada2 = pulp.value(prob.objective)
+            hay_terciario = preparar_pasada3(prob, z, w, v, peso_max, peso_min, valor_pasada2)
+            if hay_terciario:
+                print(f"\nPasada 3 de {n_pasadas}: objetivo secundario acotado a "
+                      f"<= {valor_pasada2 + TOLERANCIA_PASADA3:.2f}")
+                print(f"  Minimizando desbalance de peso (limite {LIMITE_SEGUNDOS_BALANCE} s, "
+                      f"sin warm start -- ver nota de LIMITE_SEGUNDOS_BALANCE)...")
+                solucion_pasada2 = capturar_solucion(prob)
+                res3 = resolver(prob, limite=LIMITE_SEGUNDOS_BALANCE)
+
+                if T_max.value() is None or T_max.value() <= 0:
+                    print("  La pasada 3 no encontro solucion dentro del limite.")
+                    print("  Se conserva el resultado de la pasada 2.")
+                    restaurar_solucion(prob, solucion_pasada2)
+                    res_final = res2
+                else:
+                    desbalance_ton = sum(
+                        peso_max[k].value() - peso_min[k].value() for k in peso_max
+                    )
+                    print(f"  Desbalance de peso final: {desbalance_ton:.1f} t "
+                          f"(suma de max-min de cada etapa del viaje)")
+                    describir_resolucion(res3, "Pasada 3")
+                    res_final = res3
     else:
         print("\nSin terminos secundarios activos: se omite la pasada 2.")
         res_final = res1

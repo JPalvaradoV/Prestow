@@ -40,6 +40,7 @@ _NOMBRES_GLOBALES = [
     "CUADRILLAS",
     "ROT",
     "HUELLA",
+    "PESO",
     "PISO",
     "AREA",
     "DEMANDA",
@@ -76,6 +77,14 @@ class ResultadoCorrida:
     estado_solver: str
     gap: float | None
     tiempo_solver_s: float
+    excel_bytes: bytes
+    """
+    Excel con el formato visual del prestow (modelo_prestow.exportar_excel):
+    Plan de estiba coloreado, Detalle y Indicadores. Se genera aquí, con el
+    lock tomado, porque exportar_excel() lee BODEGAS/PLANES/DESTINOS/ROT/
+    HUELLA/CUADRILLAS de los globales del módulo — fuera de resolver_prestow
+    esos globales ya no corresponden necesariamente a esta corrida.
+    """
 
 
 # =============================================================================
@@ -133,6 +142,62 @@ def _resolver_con_solver(prob, solver) -> dict:
     }
 
 
+def _resolver_con_warm_start(prob, solver, solucion_inicial: dict) -> dict:
+    """
+    Como _resolver_con_solver, pero le pasa a HiGHS la solución de la pasada
+    anterior como punto de partida (MIP start) en vez de dejarlo buscar una
+    solución factible desde cero.
+
+    POR QUÉ HACE FALTA: PuLP no expone warm start para HiGHS en esta versión
+    (pulp.HiGHS.actualSolve() siempre reconstruye el modelo desde cero y no
+    acepta un punto inicial). Se prueba empíricamente que sin esto, la pasada
+    de balance de peso no encuentra NINGUNA solución factible ni en 900 s,
+    pese a que la solución de la pasada anterior ya es una — el problema no
+    es el tiempo, es que HiGHS tiene que redescubrir la factibilidad por su
+    cuenta después de que se retira la ruptura de simetría.
+
+    Reproduce a mano la secuencia interna de pulp.HiGHS.actualSolve()
+    (createAndConfigureSolver -> buildSolverModel -> callSolver ->
+    findSolutionValues) para poder inyectar la solución justo después de que
+    buildSolverModel asigna el índice de columna de cada variable
+    (var.index), que es el orden que espera HiGHS.
+
+    SOLO sirve con pulp.HiGHS: usa métodos internos de esa clase que CBC no
+    tiene. Si solver no es una instancia de pulp.HiGHS, resuelve sin warm
+    start (igual que _resolver_con_solver).
+    """
+    if not isinstance(solver, pulp.HiGHS):
+        return _resolver_con_solver(prob, solver)
+
+    import highspy
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        solver.createAndConfigureSolver(prob)
+        solver.buildSolverModel(prob)
+
+        sol = highspy.HighsSolution()
+        sol.value_valid = True
+        col_values = [0.0] * len(prob.variables())
+        for v in prob.variables():
+            col_values[v.index] = solucion_inicial.get(v.name) or 0.0
+        sol.col_value = col_values
+        prob.solverModel.setSolution(sol)
+
+        solver.callSolver(prob)
+        status, sol_status = solver.findSolutionValues(prob)
+        prob.assignStatus(status, sol_status)
+
+    log = buf.getvalue()
+    return {
+        "estado_pulp": pulp.LpStatus[prob.status],
+        "optimo_probado": "Result - Optimal solution found" in log,
+        "corto_por_tiempo": "Stopped on time limit" in log,
+        "gap": _mp._leer_gap(log),
+        "log": log,
+    }
+
+
 def _describir_estado(res: dict) -> str:
     if res["optimo_probado"]:
         return "Óptimo probado"
@@ -155,6 +220,7 @@ def resolver_prestow(
     ruta_datos: str | Path,
     ruta_capacidades: str | Path | None = None,
     limite_segundos: int = 180,
+    limite_segundos_balance: int | None = None,
     solver: str = "HiGHS",
     seed: int | None = None,
 ) -> ResultadoCorrida:
@@ -172,7 +238,15 @@ def resolver_prestow(
         Tabla de capacidades generada por packer_2d.py. Si es None se usa
         data/capacidades.csv relativo a la raíz del proyecto.
     limite_segundos:
-        Límite de tiempo del solver en segundos, por pasada.
+        Límite de tiempo del solver en segundos, para las pasadas 1 y 2
+        (makespan e izadas+fragmentación).
+    limite_segundos_balance:
+        Límite de tiempo en segundos para la pasada 3 (balance de peso, ver
+        modelo_prestow.USAR_BALANCE_PESO y ETAPAS_BALANCE_PESO). Con la
+        configuración final (1 sola etapa, la carga inicial) converge bien
+        en el mismo tiempo que las pasadas 1 y 2 — se probó con las 4 etapas
+        completas darle más tiempo (hasta 900 s) y no ayudó, así que no hace
+        falta un límite mayor por defecto. Si es None, usa limite_segundos.
     solver:
         "HiGHS" (por defecto) o "CBC".
     seed:
@@ -185,6 +259,8 @@ def resolver_prestow(
         Si los datos de entrada son incoherentes o si el solver no encontró
         ninguna solución factible dentro del límite de tiempo.
     """
+    if limite_segundos_balance is None:
+        limite_segundos_balance = limite_segundos
     ruta_datos = Path(ruta_datos)
     if ruta_capacidades is None:
         ruta_capacidades = _DEFAULT_CAPACIDADES
@@ -208,7 +284,7 @@ def resolver_prestow(
                 )
 
             # 3. Construir modelo MILP
-            prob, x, y, z, w, v, T_max, combos = _mp.construir_modelo()
+            prob, x, y, z, w, v, T_max, combos, peso_max, peso_min = _mp.construir_modelo()
 
             # 4. Pasada 1: minimizar makespan
             solver_p1 = _construir_solver(solver, limite_segundos, seed)
@@ -228,6 +304,7 @@ def resolver_prestow(
             hay_secundario = _mp.preparar_pasada2(prob, z, w, v, T_max, makespan_p1)
             res_final = res1
             t_fin = t_tras_p1
+            pasada3_exitosa = False
 
             if hay_secundario:
                 solver_p2 = _construir_solver(solver, limite_segundos, seed)
@@ -240,6 +317,28 @@ def resolver_prestow(
                     res_final = res1
                 else:
                     res_final = res2
+
+                    # 5b. Pasada 3: fijar izadas+fragmentación y balancear peso
+                    valor_pasada2 = pulp.value(prob.objective)
+                    solucion_p2 = _mp.capturar_solucion(prob)
+                    hay_terciario = _mp.preparar_pasada3(
+                        prob, z, w, v, peso_max, peso_min, valor_pasada2
+                    )
+
+                    if hay_terciario:
+                        solver_p3 = _construir_solver(solver, limite_segundos_balance, seed)
+                        res3 = _resolver_con_warm_start(prob, solver_p3, solucion_p2)
+                        t_fin = time.perf_counter()
+
+                        if T_max.value() is None or T_max.value() <= 0:
+                            # La pasada 3 no resolvió; conservar la de la pasada 2
+                            # (sus peso_max/peso_min no fueron minimizados: no son
+                            # un balance real, así que el KPI no se informa)
+                            _mp.restaurar_solucion(prob, solucion_p2)
+                            res_final = res2
+                        else:
+                            res_final = res3
+                            pasada3_exitosa = True
 
             # 6. Extraer el plan
             filas_raw = _mp.extraer_plan(x, z, combos)
@@ -285,6 +384,16 @@ def resolver_prestow(
                 "unidades_totales": float(sum(f["unidades"] for f in filas_raw)),
             }
 
+            # Desbalance de peso por etapa del viaje (suma de max-min de cada
+            # etapa, en toneladas). Solo se informa si la pasada 3 realmente
+            # resolvió: si no, peso_max/peso_min quedan en un valor factible
+            # cualquiera de la pasada 2 (nunca se minimizaron) y reportarlo
+            # sería un número sin sentido, no un balance real.
+            if pasada3_exitosa and all(pm.value() is not None for pm in peso_max.values()):
+                kpis["balance_peso_desbalance_ton"] = round(
+                    sum(peso_max[k].value() - peso_min[k].value() for k in peso_max), 2
+                )
+
             # 8. Verificaciones de coherencia
             verificaciones: dict[str, list] = {
                 "no_overstowage": _mp.verificar_no_overstowage(filas_raw),
@@ -292,6 +401,13 @@ def resolver_prestow(
                 "contiguidad": _mp.verificar_contiguidad(filas_raw),
                 "capacidad": _mp.verificar_capacidad(filas_raw),
             }
+
+            # 9. Excel con el formato del prestow — con los globales todavía
+            # cargados con los datos de esta corrida (ver docstring del campo).
+            buf_excel = io.BytesIO()
+            _mp.exportar_excel(filas_raw, horas, makespan_final, ruta=buf_excel)
+            buf_excel.seek(0)
+            excel_bytes = buf_excel.read()
 
             return ResultadoCorrida(
                 makespan=makespan_final,
@@ -303,6 +419,7 @@ def resolver_prestow(
                 estado_solver=_describir_estado(res_final),
                 gap=res_final.get("gap"),
                 tiempo_solver_s=round(t_fin - t_inicio, 1),
+                excel_bytes=excel_bytes,
             )
 
         finally:

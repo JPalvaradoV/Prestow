@@ -32,5 +32,6 @@ def cargar_caso_demo() -> None:
         "makespan_manual_h": 60.61,
     }
     # Limpiar resultado anterior
-    for clave in ("resultado", "resultado_excel", "resultado_kpis_csv"):
+    for clave in ("resultado", "resultado_excel_completo", "resultado_excel_error",
+                  "huellas_productos", "geometria_bodegas"):
         st.session_state.pop(clave, None)

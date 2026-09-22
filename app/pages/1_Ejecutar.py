@@ -18,11 +18,6 @@ import streamlit as st
 
 from components.caso_demo import cargar_caso_demo
 from components.estilo import AZUL_MARINO, TEAL, aplicar_estilo_global
-from components.formato import (
-    generar_excel_bytes,
-    generar_kpis_csv,
-    generar_reporte_parametros,
-)
 
 st.set_page_config(
     page_title="Ejecutar",
@@ -120,14 +115,16 @@ with st.expander("⚙️ Parámetros del solver (opcional)", expanded=False):
         limite = st.slider(
             "Límite de tiempo por pasada (segundos)",
             min_value=30,
-            max_value=300,
+            max_value=360,
             value=180,
             step=30,
-            help="Se aplica a cada una de las dos pasadas del solver. "
+            help="Se aplica a cada una de las tres pasadas del solver (makespan, "
+                 "izadas+fragmentación, balance de peso) — el tiempo total es el "
+                 "triple de este valor. Máximo 360 s por pasada (18 minutos en total). "
                  "Valores más bajos dan resultados más rápidos pero menos precisos.",
         )
     st.caption(
-        f"Tiempo estimado total: ~{max(1, round(limite * 2 / 60))} minutos. "
+        f"Tiempo estimado total: ~{max(1, round(limite * 3 / 60))} minutos (máximo 18). "
         "El solver puede terminar antes si encuentra la solución exacta."
     )
 
@@ -153,7 +150,7 @@ with col_run:
     )
 
 with col_info:
-    estimado_min = max(1, round(limite * 2 / 60))
+    estimado_min = max(1, round(limite * 3 / 60))
     st.info(
         f"⏱️ El cálculo demora alrededor de **{estimado_min} minutos** "
         f"con límite de {limite} s por pasada. "
@@ -174,10 +171,11 @@ if correr:
     aviso = st.empty()
     aviso.markdown(
         f"<div class='card-prestow card-accion'>"
-        f"<b>Ejecutando optimización en dos pasadas:</b><br>"
+        f"<b>Ejecutando optimización en tres pasadas:</b><br>"
         f"<ol style='margin:8px 0 0 0;'>"
         f"<li>Minimizar el tiempo total de carga (makespan)</li>"
         f"<li>Reducir izadas y fragmentación, manteniendo el makespan obtenido</li>"
+        f"<li>Balancear el peso entre bodegas al zarpar, sin empeorar lo anterior</li>"
         f"</ol><br>Por favor no cierres esta ventana."
         f"</div>",
         unsafe_allow_html=True,
@@ -216,14 +214,12 @@ if correr:
         "ruta_datos": ruta_datos,
         "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-    try:
-        st.session_state["resultado_excel"] = generar_excel_bytes(resultado)
-        st.session_state["resultado_kpis_csv"] = generar_kpis_csv(resultado)
-        st.session_state["resultado_parametros_csv"] = generar_reporte_parametros(
-            resultado, st.session_state["parametros_corrida"]
-        )
-    except Exception:
-        pass
+    # El Excel completo (con izadas y balance de peso) se arma en Resultados,
+    # la primera vez que se abre esa página — ahí ya están las huellas y la
+    # geometría cacheadas. Acá solo limpiamos cualquier reporte de una
+    # corrida anterior para que no se mezcle con este resultado nuevo.
+    for clave in ("resultado_excel_completo", "resultado_excel_error"):
+        st.session_state.pop(clave, None)
 
     makespan_manual = meta.get("makespan_manual_h")
 

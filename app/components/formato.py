@@ -6,17 +6,7 @@ from __future__ import annotations
 
 import io
 
-import pandas as pd
-
 PESO_UNIDAD_T: float = 2.02  # constante del caso base Kiwi Arrow
-
-_LABELS_KPI: dict[str, str] = {
-    "makespan_h": "Makespan (h)",
-    "desbalance_pct": "Desbalance cuadrillas (%)",
-    "fragmentacion_bodegas_destino": "Fragmentación (bodegas×destino)",
-    "izadas_totales": "Izadas totales",
-    "unidades_totales": "Unidades totales",
-}
 
 
 def formato_horas(h: float) -> str:
@@ -55,68 +45,105 @@ def formato_diferencia(delta: float, unidad: str) -> tuple[str, str]:
         return f"0 {unidad}", "#64748B"                    # gris neutro
 
 
-def generar_excel_bytes(resultado: object) -> bytes:
-    """
-    Genera el Excel de plan de estiba en memoria a partir de un ResultadoCorrida.
+def _hoja_tabla(wb, nombre: str, encabezados: list[str], filas: list[tuple]):
+    """Crea una hoja con una tabla simple (encabezado gris + bordes), estilo
+    consistente con las hojas que ya genera modelo_prestow.exportar_excel."""
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
 
-    Produce dos hojas:
-    - «Plan de estiba»: filas del plan ordenadas por bodega y plan.
-    - «KPIs»: indicadores de la corrida.
+    FUENTE = "Arial"
+    COLOR_ENCABEZADO = "44546A"
+    fino = Side(style="thin", color="BFBFBF")
+    borde = Border(left=fino, right=fino, top=fino, bottom=fino)
+
+    ws = wb.create_sheet(nombre)
+    for j, enc in enumerate(encabezados, start=1):
+        c = ws.cell(row=1, column=j, value=enc)
+        c.font = Font(name=FUENTE, size=10, bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor=COLOR_ENCABEZADO)
+        c.border = borde
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    for i, fila in enumerate(filas, start=2):
+        for j, v in enumerate(fila, start=1):
+            c = ws.cell(row=i, column=j, value=v)
+            c.font = Font(name=FUENTE, size=10)
+            c.border = borde
+    for j in range(1, len(encabezados) + 1):
+        ws.column_dimensions[get_column_letter(j)].width = 22
+    ws.freeze_panes = "A2"
+    if filas:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(encabezados))}{len(filas) + 1}"
+    return ws
+
+
+def generar_excel_bytes(
+    resultado: object,
+    huellas: dict[str, tuple[float, float]] | None = None,
+    geometria: dict[int, tuple[float, float]] | None = None,
+    rot: dict[str, int] | None = None,
+    parametros: dict | None = None,
+    balance: object | None = None,
+) -> bytes:
     """
-    filas = []
-    for f in resultado.plan:  # type: ignore[attr-defined]
-        filas.append(
-            {
-                "Bodega": f.bodega,
-                "Plan": f.plan,
-                "Producto": f.producto,
-                "Destino": f.destino,
-                "Unidades": f.unidades,
-                "Toneladas": round(f.unidades * PESO_UNIDAD_T, 1),
-            }
+    Arma el Excel completo de descarga: parte del Excel oficial que ya genera
+    el modelo (resultado.excel_bytes — «Plan de estiba» coloreado tipo
+    prestow, «Detalle», «Indicadores») y le agrega, cuando los datos están
+    disponibles, «Izadas y secuencia» (todas las capas, no solo la que se ve
+    en pantalla), «Balance de peso» y «Parámetros de la corrida». Un solo
+    archivo con todo, en vez de varios sueltos.
+
+    huellas, geometria, rot: necesarios para la hoja de izadas — se omite si
+        falta alguno. balance: BalancePeso (src/balance_peso.py) — se omite
+        la hoja si es None. parametros: dict de la corrida (solver, límite,
+        fecha, etc.) — si es None solo se documenta el estado del solver.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(io.BytesIO(resultado.excel_bytes))  # type: ignore[attr-defined]
+
+    if huellas and geometria and rot:
+        from layout_capa import layout_para_fila_plan
+        from secuencia_izadas import calcular_secuencia
+
+        filas_izadas = []
+        capas = sorted({(f.bodega, f.plan) for f in resultado.plan})  # type: ignore[attr-defined]
+        for bodega, plan_n in capas:
+            layout = layout_para_fila_plan(bodega, plan_n, resultado.plan, geometria, huellas)  # type: ignore[attr-defined]
+            for iz in calcular_secuencia(layout, rot):
+                filas_izadas.append((
+                    bodega, plan_n, iz.numero, iz.cantidad,
+                    ", ".join(sorted(iz.productos)), ", ".join(sorted(iz.destinos)),
+                ))
+        _hoja_tabla(
+            wb, "Izadas y secuencia",
+            ["Bodega", "Plan", "Izada", "Unidades", "Producto(s)", "Destino(s)"],
+            filas_izadas,
         )
-    df_plan = (
-        pd.DataFrame(filas).sort_values(["Bodega", "Plan"])
-        if filas
-        else pd.DataFrame(columns=["Bodega", "Plan", "Producto", "Destino", "Unidades", "Toneladas"])
-    )
 
-    kpis_rows = [
-        {"Indicador": _LABELS_KPI.get(k, k), "Valor": v}
-        for k, v in resultado.kpis.items()  # type: ignore[attr-defined]
-    ]
-    df_kpis = pd.DataFrame(kpis_rows)
+    if balance is not None:
+        filas_balance = [
+            (h, round(balance.peso_por_bodega[h], 1), round(balance.densidad_por_bodega.get(h, 0.0), 3))
+            for h in sorted(balance.peso_por_bodega)
+        ]
+        ws_bal = _hoja_tabla(wb, "Balance de peso", ["Bodega", "Peso (t)", "Densidad (t/m2)"], filas_balance)
+        fila = len(filas_balance) + 3
+        from openpyxl.styles import Font
+        ws_bal.cell(row=fila, column=1, value="Dispersión relativa de densidad (%)").font = Font(bold=True)
+        ws_bal.cell(row=fila, column=2, value=balance.dispersion_relativa)
+        ws_bal.cell(row=fila + 1, column=1, value=(
+            "Informativo: el modelo no restringe peso ni distribución por bodega "
+            "(sin evidencia de problema operativo, ver CLAUDE.md sección 6)."
+        )).font = Font(italic=True, size=9, color="595959")
 
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df_plan.to_excel(writer, sheet_name="Plan de estiba", index=False)
-        df_kpis.to_excel(writer, sheet_name="KPIs", index=False)
-    buf.seek(0)
-    return buf.read()
-
-
-def generar_kpis_csv(resultado: object) -> str:
-    """Genera un CSV con los KPIs del resultado."""
-    lines = ["Indicador,Valor"]
-    for k, v in resultado.kpis.items():  # type: ignore[attr-defined]
-        label = _LABELS_KPI.get(k, k)
-        lines.append(f"{label},{v}")
-    return "\n".join(lines)
-
-
-def generar_reporte_parametros(resultado: object, parametros: dict) -> str:
-    """
-    Genera un CSV con los parámetros de la corrida y el estado final del
-    solver, para que la corrida quede documentada junto al Excel descargado.
-
-    parametros: dict con al menos "solver", "limite_segundos"; puede incluir
-        "seed", "ruta_datos", "fecha_hora".
-    """
-    filas = list(parametros.items()) + [
+    filas_param = list((parametros or {}).items()) + [
         ("estado_solver", resultado.estado_solver),  # type: ignore[attr-defined]
-        ("gap", resultado.gap if resultado.gap is not None else ""),  # type: ignore[attr-defined]
+        ("gap", resultado.gap if resultado.gap is not None else "no disponible"),  # type: ignore[attr-defined]
         ("tiempo_solver_s", resultado.tiempo_solver_s),  # type: ignore[attr-defined]
         ("makespan_h", resultado.kpis.get("makespan_h", "")),  # type: ignore[attr-defined]
     ]
-    lines = ["Parámetro,Valor"] + [f"{k},{v}" for k, v in filas]
-    return "\n".join(lines)
+    _hoja_tabla(wb, "Parámetros de la corrida", ["Parámetro", "Valor"], filas_param)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()

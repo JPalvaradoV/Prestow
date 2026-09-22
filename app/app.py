@@ -70,6 +70,43 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# --- Guía de navegación (accesibilidad: explica cada sección del menú) ---
+st.markdown("### 🧭 Cómo usar el sistema")
+st.caption(
+    "Las secciones están en el menú de la izquierda (si no lo ves, toca la flecha "
+    "**»** arriba a la izquierda para abrirlo). Se usan en este orden:"
+)
+
+guia = [
+    ("🏠", "Inicio", "Esta página. Punto de partida: explica el sistema y permite "
+                     "cargar el caso demo o ir directo a configurar un caso propio."),
+    ("🛠️", "Configuración", "Opcional — el caso demo ya trae datos reales listos para "
+                            "usar. Sirve para editar el buque (bodegas y tamaños), los "
+                            "productos, cuántas unidades van a cada puerto (Viaje) y en "
+                            "qué orden se descargan los puertos (Rotación)."),
+    ("⚙️", "Ejecutar", "Corre el cálculo. Se elige el solver (motor de cálculo) y el "
+                       "tiempo máximo que puede demorar — con los valores por defecto "
+                       "alcanza, no hace falta tocar nada."),
+    ("📊", "Resultados", "El plan ya calculado: indicadores clave, mapa del buque, la "
+                         "posición real de cada unidad de carga por bodega, el orden de "
+                         "las izadas de la grúa, el balance de peso, y los archivos para "
+                         "descargar (Excel, KPIs y parámetros de la corrida)."),
+]
+
+cols_guia = st.columns(4, gap="medium")
+for col, (icono, nombre, texto) in zip(cols_guia, guia, strict=True):
+    with col:
+        st.markdown(
+            f"<div class='card-prestow card-info' style='min-height:200px;'>"
+            f"<div style='font-size:26px; margin-bottom:6px;'>{icono}</div>"
+            f"<h4 style='margin:0 0 8px 0;'>{nombre}</h4>"
+            f"<p style='margin:0; font-size:14px; color:#475569; line-height:1.5;'>{texto}</p>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+st.divider()
+
 # --- Cuerpo en dos columnas ---
 col_texto, col_entregables = st.columns([3, 2], gap="large")
 
