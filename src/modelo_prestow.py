@@ -1797,7 +1797,14 @@ def main(carpeta_datos=None, interactivo=True):
 
     # --- Pasada 1: minimizar el makespan ---
     print(f"\nPasada 1 de {n_pasadas}: minimizando el makespan (limite {LIMITE_SEGUNDOS} s)...")
-    res1 = resolver(prob)
+    # OJO: pasar limite= explicito, no confiar en el default de resolver().
+    # El default (limite=LIMITE_SEGUNDOS) se evalua UNA VEZ, cuando Python
+    # define la funcion -- si --limite reasigna el global LIMITE_SEGUNDOS
+    # despues (en main(), mas abajo), el default de resolver() sigue
+    # apuntando al valor viejo. Bug real detectado el 22-sep-2026: con
+    # --limite 30 el CLI igual resolvia con 120 s (el valor del modulo al
+    # cargar), sin avisar.
+    res1 = resolver(prob, limite=LIMITE_SEGUNDOS)
     if T_max.value() is None:
         print(f"  Sin solucion. Estado PuLP: {res1['estado_pulp']}")
         return
@@ -1814,7 +1821,7 @@ def main(carpeta_datos=None, interactivo=True):
               f"(+{TOLERANCIA_IZADAS} izadas de tolerancia)")
         print(f"  Minimizando terminos secundarios (limite {LIMITE_SEGUNDOS} s)...")
         solucion_pasada1 = capturar_solucion(prob)
-        res2 = resolver(prob)
+        res2 = resolver(prob, limite=LIMITE_SEGUNDOS)  # ver nota de la pasada 1
 
         if T_max.value() is None or T_max.value() <= 0:
             # La pasada 2 no encontro solucion dentro de su limite de tiempo.

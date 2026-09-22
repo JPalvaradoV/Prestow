@@ -17,18 +17,34 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import pulp
 
 try:
     from . import modelo_prestow as _mp
+    from . import solucion_inicial as _si
 except ImportError:
     import modelo_prestow as _mp  # type: ignore[import]
+    import solucion_inicial as _si  # type: ignore[import]
 
 # Un lock por proceso: garantiza que dos corridas no pisen los globales del módulo
 # simultáneamente. Streamlit puede tener varias sesiones, pero las corridas se
 # encolan. El lock dura todo el tiempo del solver; es intencional.
 _lock = threading.Lock()
+
+# Umbral (segundos) por debajo del cual la pasada 1 usa el warm start
+# heurístico de solucion_inicial.py. Medido el 22-sep-2026 (caso base, ver
+# docs/05_Estado_app_web.md): el warm start ANCLA la búsqueda cerca de su
+# propio punto de partida (~60 h) — a 180 s con warm start el gap solo baja a
+# 4,1% y el resultado final es 60,18 h, peor que los 59,67 h que el solver ya
+# lograba buscando desde cero en el mismo tiempo. Por debajo de este umbral
+# la pasada 1 sin warm start directamente NO encuentra ninguna solución
+# factible (verificado a 30/60/90 s), así que ahí el warm start es
+# estrictamente una mejora — cualquier resultado es mejor que ninguno. A
+# partir del umbral se resuelve igual que antes del warm start (sin él), para
+# no tocar el comportamiento ya validado a 180 s.
+UMBRAL_WARM_START_PASADA1 = 180
 
 # Globales de modelo_prestow que cargar_datos/cargar_capacidades modifican.
 # TIEMPO_CICLO_POR_BODEGA, APROVECHAMIENTO, etc. son constantes: no se tocan.
@@ -225,6 +241,7 @@ def resolver_prestow(
     limite_segundos_balance: int | None = None,
     solver: str = "HiGHS",
     seed: int | None = None,
+    progreso: Callable[[str], None] | None = None,
 ) -> ResultadoCorrida:
     """
     Corre el modelo de prestow sobre los datos indicados y retorna un
@@ -254,6 +271,12 @@ def resolver_prestow(
     seed:
         Semilla para el solver. Solo es efectiva con HiGHS >= 1.7 vía PuLP >= 2.9
         o con CBC. Si la versión instalada no la soporta, se ignora sin error.
+    progreso:
+        Callback opcional, llamado con un mensaje corto en español en cada
+        etapa (carga de datos, cada pasada). Pensado para que la web muestre
+        avance en vivo en vez de un spinner ciego durante los minutos que
+        puede tardar el solver — ver app/pages/1_Ejecutar.py, que lo llama
+        desde un hilo aparte y va mostrando el último mensaje recibido.
 
     Raises
     ------
@@ -261,6 +284,10 @@ def resolver_prestow(
         Si los datos de entrada son incoherentes o si el solver no encontró
         ninguna solución factible dentro del límite de tiempo.
     """
+    def _avisar(mensaje: str) -> None:
+        if progreso is not None:
+            progreso(mensaje)
+
     if limite_segundos_balance is None:
         limite_segundos_balance = limite_segundos
     ruta_datos = Path(ruta_datos)
@@ -274,6 +301,7 @@ def resolver_prestow(
 
         try:
             # 1. Cargar datos (modifica globales del módulo)
+            _avisar("Cargando datos de entrada…")
             _mp.cargar_datos(str(ruta_datos))
             _mp.cargar_capacidades(str(ruta_capacidades))
             # Capacidades reales por plan (ver modelo_prestow.CAPACIDAD_POR_PLAN):
@@ -291,16 +319,47 @@ def resolver_prestow(
                 )
 
             # 3. Construir modelo MILP
+            _avisar("Construyendo el modelo…")
             prob, x, y, z, w, v, T_max, combos, peso_max, peso_min = _mp.construir_modelo()
 
             # 4. Pasada 1: minimizar makespan
+            # Warm start heurístico SOLO por debajo de UMBRAL_WARM_START_PASADA1
+            # (ver su comentario): sin él, HiGHS puede tardar más de 120 s solo
+            # en encontrar la PRIMERA solución entera factible para este modelo
+            # (contiguidad + no-overstowage + llenado mínimo lo hacen difícil
+            # para sus heurísticas internas) — con límites bajos simplemente no
+            # llega. Pero a partir del umbral, el warm start ancla la búsqueda
+            # cerca de su propio punto de partida y termina PEOR que dejar al
+            # solver buscar desde cero — así que ahí no se usa. Ver
+            # src/solucion_inicial.py para el detalle y las verificaciones que
+            # se corren antes de usarlo. Si el heurístico no encuentra o no
+            # pasa las verificaciones, devuelve None y se resuelve sin él
+            # (igual que antes) — nunca se inyecta una solución sin validar.
+            solucion_inicial_p1 = None
+            if limite_segundos < UMBRAL_WARM_START_PASADA1:
+                _avisar("Preparando punto de partida…")
+                solucion_inicial_p1 = _si.construir_solucion_inicial(
+                    prob, x, y, w, z, v, T_max, peso_max, peso_min, combos
+                )
+
             solver_p1 = _construir_solver(solver, limite_segundos, seed)
-            res1 = _resolver_con_solver(prob, solver_p1)
+            if solucion_inicial_p1 is not None:
+                _avisar(f"Pasada 1 de 3 — makespan (hasta {limite_segundos} s, con punto de partida)…")
+                res1 = _resolver_con_warm_start(prob, solver_p1, solucion_inicial_p1)
+            else:
+                _avisar(f"Pasada 1 de 3 — makespan (hasta {limite_segundos} s)…")
+                res1 = _resolver_con_solver(prob, solver_p1)
 
             if T_max.value() is None or T_max.value() <= 0:
+                detalle_gap = (
+                    f" Mejor cota encontrada: gap {res1['gap']:.1f}%."
+                    if res1.get("gap") is not None
+                    else ""
+                )
                 raise ValueError(
                     f"El solver no encontró ninguna solución factible en "
-                    f"{limite_segundos} s. Sube el límite con limite_segundos=..."
+                    f"{limite_segundos} s.{detalle_gap} Sube el límite e intenta de nuevo "
+                    f"(180 s por pasada es lo mínimo verificado para el caso base)."
                 )
 
             makespan_p1 = T_max.value()
@@ -314,8 +373,15 @@ def resolver_prestow(
             pasada3_exitosa = False
 
             if hay_secundario:
+                # Warm start desde la pasada 1: sin esto, pulp.HiGHS.actualSolve()
+                # reconstruye el modelo desde cero y la pasada 2 tiene que
+                # redescubrir la factibilidad por su cuenta bajo la nueva
+                # restricción de makespan — el mismo problema que motivó el
+                # warm start de la pasada 3, y probablemente la causa real del
+                # pendiente "la pasada 2 no resuelve en 150-180 s".
+                _avisar(f"Pasada 2 de 3 — izadas y fragmentación (hasta {limite_segundos} s)…")
                 solver_p2 = _construir_solver(solver, limite_segundos, seed)
-                res2 = _resolver_con_solver(prob, solver_p2)
+                res2 = _resolver_con_warm_start(prob, solver_p2, solucion_p1)
                 t_fin = time.perf_counter()
 
                 if T_max.value() is None or T_max.value() <= 0:
@@ -333,6 +399,9 @@ def resolver_prestow(
                     )
 
                     if hay_terciario:
+                        _avisar(
+                            f"Pasada 3 de 3 — balance de peso (hasta {limite_segundos_balance} s)…"
+                        )
                         solver_p3 = _construir_solver(solver, limite_segundos_balance, seed)
                         res3 = _resolver_con_warm_start(prob, solver_p3, solucion_p2)
                         t_fin = time.perf_counter()
@@ -348,6 +417,7 @@ def resolver_prestow(
                             pasada3_exitosa = True
 
             # 6. Extraer el plan
+            _avisar("Extrayendo el plan y armando el Excel…")
             filas_raw = _mp.extraer_plan(x, z, combos)
             horas = _mp.horas_por_cuadrilla(z)
 

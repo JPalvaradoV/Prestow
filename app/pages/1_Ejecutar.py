@@ -109,7 +109,10 @@ with st.expander("⚙️ Parámetros del solver (opcional)", expanded=False):
             "Solver",
             options=["HiGHS", "CBC"],
             index=0,
-            help="HiGHS es más rápido. CBC como respaldo si HiGHS no está disponible.",
+            help="HiGHS es más rápido y usa un punto de partida propio para no "
+                 "empezar de cero (ver más abajo) — se recomienda dejarlo. CBC "
+                 "es el respaldo si HiGHS no está disponible, pero no usa ese "
+                 "punto de partida, así que necesita más tiempo.",
         )
     with col_t:
         limite = st.slider(
@@ -121,7 +124,11 @@ with st.expander("⚙️ Parámetros del solver (opcional)", expanded=False):
             help="Se aplica a cada una de las tres pasadas del solver (makespan, "
                  "izadas+fragmentación, balance de peso) — el tiempo total es el "
                  "triple de este valor. Máximo 360 s por pasada (18 minutos en total). "
-                 "Valores más bajos dan resultados más rápidos pero menos precisos.",
+                 "Con HiGHS, el solver arranca desde un punto de partida ya factible "
+                 "(no óptimo) en vez de buscar una solución desde cero, así que incluso "
+                 "límites bajos como 30 s devuelven un plan válido — solo que con menos "
+                 "tiempo para mejorarlo. 180 s por pasada es lo que se probó a fondo "
+                 "contra el caso base.",
         )
     st.caption(
         f"Tiempo estimado total: ~{max(1, round(limite * 3 / 60))} minutos (máximo 18). "
@@ -159,6 +166,8 @@ with col_info:
 
 # --- Ejecución ---
 if correr:
+    import threading
+
     from api import resolver_prestow
 
     ruta_datos = st.session_state.get("ruta_datos", "")
@@ -181,27 +190,57 @@ if correr:
         unsafe_allow_html=True,
     )
 
-    error_msg = None
-    resultado = None
+    # La corrida se lanza en un hilo aparte y este bucle sondea su estado
+    # cada segundo para mostrar avance en vivo (etapa actual + tiempo
+    # transcurrido) — sin esto, la página quedaba con un spinner ciego
+    # durante los minutos que puede tardar el solver, sin forma de saber si
+    # seguía calculando o se había colgado (reportado por el usuario el
+    # 22-sep-2026).
+    estado_hilo = {"mensaje": "Iniciando…", "resultado": None, "error": None, "terminado": False}
 
-    with st.spinner("Calculando..."):
+    def _correr_en_hilo():
         try:
-            resultado = resolver_prestow(
+            estado_hilo["resultado"] = resolver_prestow(
                 ruta_datos=ruta_datos,
                 ruta_capacidades=ruta_cap,
                 limite_segundos=limite,
                 solver=solver,
+                progreso=lambda m: estado_hilo.update(mensaje=m),
             )
         except FileNotFoundError as exc:
-            error_msg = f"Archivo no encontrado: {exc}"
+            estado_hilo["error"] = f"Archivo no encontrado: {exc}"
         except Exception as exc:
-            error_msg = (
+            estado_hilo["error"] = (
                 "Ocurrió un error durante la optimización. "
                 "Verifica que los archivos de datos estén completos y vuelve a intentar.\n\n"
                 f"Detalle técnico: {type(exc).__name__}: {exc}"
             )
+        finally:
+            estado_hilo["terminado"] = True
 
+    hilo = threading.Thread(target=_correr_en_hilo, daemon=True)
+    t_inicio_corrida = time.time()
+    hilo.start()
+
+    progreso_ui = st.empty()
+    while not estado_hilo["terminado"]:
+        transcurrido = int(time.time() - t_inicio_corrida)
+        minutos, segundos = divmod(transcurrido, 60)
+        progreso_ui.markdown(
+            f"<div class='card-prestow card-accion'>"
+            f"⏳ <b>{estado_hilo['mensaje']}</b><br>"
+            f"<span style='opacity:0.7;'>Tiempo transcurrido: {minutos} min {segundos:02d} s</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        time.sleep(1)
+
+    hilo.join()
+    progreso_ui.empty()
     aviso.empty()
+
+    error_msg = estado_hilo["error"]
+    resultado = estado_hilo["resultado"]
 
     if error_msg:
         st.error(error_msg)

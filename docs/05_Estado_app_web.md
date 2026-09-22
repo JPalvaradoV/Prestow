@@ -677,3 +677,153 @@ coincide entre `HOLD NRO.` y la suma de bloques, así que probablemente ahí
 `PROGRAMA G2OCEAN` = `PROGRAMA LQN` (sin diferencia entre programas), pero
 no se confirmó explícitamente. Tampoco se revisó si otras hojas del archivo
 (otras rotaciones, u otros PRESTOW) tienen el mismo patrón de dos programas.
+
+## 14. Warm start en la pasada 1 (nueva sesión, 22 de septiembre de 2026 por la tarde)
+
+El usuario probó la app en su navegador (Opera, ver sección 9 — seguía sin
+probarse en Chrome) y reportó el bug real que motivó esta sesión: con
+límites de 30, 60 y 90 segundos por pasada, la página no devolvía nada —
+error de "no se encontró solución factible" — y sin ningún feedback visible
+mientras corría, dando la sensación de que se había colgado.
+
+### Diagnóstico
+
+Se reprodujo corriendo `api.resolver_prestow()` directamente con
+`limite_segundos=30`: a los 30,01 s reportados por HiGHS, el log mostraba
+`Primal bound inf` — CERO soluciones enteras encontradas, pese a que HiGHS
+tenía todas sus heurísticas internas activas (feasibility pump, central
+rounding, shifting, etc., ver la leyenda `Src:` del log). Se confirmó que
+esto no era un problema de límite de tiempo mal aplicado (se descartó
+revisando el log completo, incluida la sección `Solving report` con
+`Timing`) sino que el modelo, para este caso, genuinamente necesita más de
+120 s de búsqueda para encontrar la PRIMERA solución factible —
+contiguidad + no-overstowage + llenado mínimo (restricción 5d) hacen que la
+combinatoria sea dura para las heurísticas de HiGHS, incluso con un MILP de
+tamaño moderado (2204 filas, 1707 columnas).
+
+De paso se encontró un bug real y separado en el CLI: `modelo_prestow.
+main()` llamaba `resolver(prob)` sin pasar `limite=` explícito, así que
+usaba el DEFAULT del parámetro (`limite=LIMITE_SEGUNDOS`, evaluado UNA VEZ
+cuando Python carga el módulo) en vez del valor reasignado por `--limite`
+en tiempo de ejecución — con `--limite 30` el CLI igual resolvía con 120 s,
+sin avisar (se vio con `Timing 120.01` en el log pese a pedir 30 s). No
+afectaba a la web, que arma sus propios solvers en `api.py` pasando
+`limite_segundos` explícito en cada llamada, pero se corrigió igual
+(`src/modelo_prestow.py`, dos líneas).
+
+### La solución: warm start heurístico para la pasada 1
+
+**`src/solucion_inicial.py` (nuevo).** Construye una asignación x[h,t,p,d]
+factible en milisegundos (no óptima, solo factible) para usar como punto de
+partida (MIP start) del solver. Algoritmo:
+
+1. Agrupa las combinaciones (producto, destino) por ROT descendente (tier
+   por destino) y procesa tier por tier — eso solo ya garantiza
+   no-overstowage (4) por construcción.
+2. Dentro de un tier, reparte la demanda en RONDAS chicas (`_FRACCION_CHUNK
+   = 0.15` de una capa por vuelta) en vez de agotar una combinación entera
+   antes de pasar a la siguiente — necesario para que las capas queden
+   MEZCLADAS entre productos del mismo destino. Se detectó en la práctica
+   que sin esto, un producto de huella chica (capacidad_unidades grande,
+   ej. ARAUCO_BKP) podía agotar la cota cruda de la restricción (5b)
+   ("ocupacion_max", que usa área/huella-mínima-entre-TODOS-los-productos,
+   más floja que la capacidad real por producto en general pero NO SIEMPRE:
+   para varias combinaciones bodega/plan la capacidad real del packer la
+   supera) sin llegar al 90% de llenado mínimo (5d) — mezclando con un
+   producto de huella más grande (más fracción por unidad) se alcanza el
+   90% dentro del mismo tope crudo.
+3. Bodegas gemelas (restricción 9, ruptura de simetría): desempate por
+   unidades acumuladas + orden fijo durante la construcción, más un reparo
+   final (`_reparar_simetria`) que mueve unidades sueltas de una celda a
+   otra ya existente (o a una capa nueva arriba, si no rompe el orden de
+   rotación) cuando el desempate deja una diferencia de un par de unidades.
+
+**Verificación exhaustiva antes de usar el resultado**: en vez de solo
+correr `verificar_cobertura/capacidad/contiguidad/no_overstowage` (los 4
+chequeos que ya existían), `construir_solucion_inicial()` fija los valores
+construidos en las variables del `prob` REAL y evalúa TODAS sus
+restricciones (`_verificar_contra_restricciones`, ~2200 en el caso base).
+Hizo falta: se detectó en la práctica que el heurístico podía pasar los 4
+chequeos existentes y aun así violar (5b) o (5d), que esos 4 no cubren. Si
+CUALQUIER restricción falla, se devuelve `None` y quien llama resuelve sin
+warm start — nunca se le inyecta a HiGHS algo sin validar.
+
+**`api.py`**: usa `_resolver_con_warm_start` (el mismo mecanismo que ya
+existía para la pasada 3, ver sección 10) para la pasada 1 — pero
+**solo si `limite_segundos < UMBRAL_WARM_START_PASADA1` (180 s)**. La
+pasada 2 SIEMPRE se warm-startea desde la solución de la pasada 1, sin
+condición de umbral.
+
+### Por qué el umbral de 180 s (hallazgo importante)
+
+La primera versión aplicaba el warm start siempre, sin umbral. Verificando
+contra el caso base a 180 s (la configuración "oficial" de CLAUDE.md), el
+resultado fue **60,18 h** — peor que los 59,67 h documentados. Diagnóstico:
+el log mostró `MIP start solution is feasible, objective value is
+59.9716666667` seguido de `Gap 4.1%` al agotar los 180 s — el warm start
+ANCLÓ la búsqueda cerca de su propio punto de partida (~60 h) y HiGHS no
+logró escapar de esa región en el tiempo dado, mientras que buscando desde
+CERO en el mismo tiempo sí llega a 59,67 h. Es un riesgo conocido de dar
+warm start a un MILP: acelera encontrar *algo*, pero puede atrapar al
+solver cerca de un óptimo local mediocre en vez de dejarlo explorar más
+ampliamente.
+
+Se agregó el umbral (`UMBRAL_WARM_START_PASADA1 = 180` en `api.py`) para
+que la pasada 1 solo use warm start por debajo de 180 s — ahí SIEMPRE es
+una mejora estricta (antes: sin solución; con warm start: un resultado
+válido) — y a 180 s+ se resuelve exactamente como antes (desde cero), para
+no tocar el número ya validado. Re-verificado tras el cambio: 180 s+ vuelve
+a dar **59,6702 h**, prácticamente idéntico al histórico.
+
+### Resultados de verificación (caso base, `api.resolver_prestow`)
+
+| Límite/pasada | Warm start pasada 1 | Makespan | Verificaciones |
+|---|---|---|---|
+| 30 s | Sí | 59,97 h | 0 violaciones |
+| 60 s | Sí | 60,21 h | 0 violaciones |
+| 90 s | Sí | 60,18 h | 0 violaciones |
+| 180 s | No (por umbral) | 59,67 h | 0 violaciones |
+
+Antes del fix, 30/60/90 s fallaban con `ValueError: no se encontró ninguna
+solución factible`. La pasada 2, de paso, se benefició del warm start desde
+la pasada 1 (siempre activo, sin condición de umbral): en la corrida de
+180 s llegó a gap 3,24%, mucho mejor que el estado previo sin warm start —
+probablemente resuelve el pendiente #4 de CLAUDE.md ("la pasada 2 no
+resuelve en 150-180 s"), aunque no se hizo una comparación A/B controlada
+para confirmarlo con certeza.
+
+### Feedback en vivo en la web
+
+`app/pages/1_Ejecutar.py`: la corrida ahora se lanza en un hilo (`threading.
+Thread`) aparte, y el hilo principal de Streamlit sondea su estado cada
+segundo, actualizando un `st.empty()` con la etapa actual (que reporta
+`resolver_prestow` vía un nuevo parámetro `progreso: Callable[[str], None]
+| None`) y el tiempo transcurrido — antes era un spinner ciego durante los
+minutos que puede tardar el solver, sin forma de saber si seguía calculando
+o se había colgado. El hilo no llama ninguna API de Streamlit (solo muta un
+dict plano), así que no dispara advertencias de "missing ScriptRunContext".
+
+### Tests nuevos
+
+`tests/test_solucion_inicial.py` (6 tests): que la asignación heurística
+cubra toda la demanda, que NO viole ninguna restricción real del modelo
+(evaluando `prob.constraints` directamente, no solo los 4 `verificar_*`) —
+tanto con los datos harcodeados de `modelo_prestow.py` como cargados desde
+el Excel del caso base vía `cargar_datos()` (la regresión real: el
+heurístico pasaba con los datos harcodeados pero fallaba con los del Excel,
+por una combinación distinta de productos/capacidades que exponía (5b) y
+luego (5d) — no alcanzaba con probar un solo camino de datos), que
+`construir_solucion_inicial()` devuelva un valor para cada variable del
+problema, y que el `T_max` quede coherente con las izadas.
+
+### Pendiente detectado, no resuelto en esta sesión
+
+- No se probó la app en un navegador real en esta sesión tampoco (seguía
+  siendo el pendiente de la sesión anterior) — el usuario prefirió que se
+  investigara y arreglara este bug primero.
+- El warm start de la pasada 1 solo vive en `api.py` (la web); el CLI
+  (`modelo_prestow.py --limite N`) sigue sin él, así que con límites bajos
+  desde la línea de comandos el problema original persiste ahí. Es
+  consistente con que ya antes solo la web tenía warm start para la
+  pasada 3 (ver comentario de `LIMITE_SEGUNDOS_BALANCE` en
+  `modelo_prestow.py`).
