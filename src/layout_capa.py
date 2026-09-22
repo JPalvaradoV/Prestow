@@ -35,6 +35,12 @@ class UnidadPosicion:
     rotado: bool
     producto: str
     destino: str
+    fila: int = 0
+    """Indice de fila dentro de la grilla de SU PROPIO grupo (producto+destino),
+    empezando en 0. Util para reconstruir la posicion exacta sin depender de
+    coordenadas continuas (por ejemplo al dibujar una grilla en Excel)."""
+    columna: int = 0
+    """Indice de columna dentro de la grilla de su propio grupo, empezando en 0."""
 
 
 @dataclass
@@ -113,6 +119,7 @@ def _rellenar_zona(x0: float, y0: float, largo_zona: float, ancho_zona: float,
                 x=x0 + i * le, y=y0 + j * an,
                 largo=le, ancho=an, rotado=rotado,
                 producto=producto, destino=destino,
+                fila=j, columna=i,
             ))
             contador += 1
     return posiciones

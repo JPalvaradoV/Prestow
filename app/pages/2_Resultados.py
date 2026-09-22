@@ -55,6 +55,12 @@ with st.sidebar:
     st.caption("© 2026")
 
 st.markdown("# 📊 Resultados de la optimización")
+st.caption(
+    "De arriba hacia abajo: **indicadores clave** (qué tan bueno es el plan), "
+    "**vista del buque** (dónde queda cada destino), **planimetría** (cómo se "
+    "acomoda cada unidad dentro de una bodega y en qué orden la grúa las levanta), "
+    "**balance de peso** (informativo), la **tabla completa** y la **descarga**."
+)
 
 # --- Estado vacío ---
 if "resultado" not in st.session_state:
@@ -151,6 +157,14 @@ st.divider()
 # KPIs completos
 # ---------------------------------------------------------------------------
 st.markdown("### 📊 KPIs completos")
+st.caption(
+    "**Desbalance:** qué tan parejo es el trabajo entre las 4 cuadrillas — cerca "
+    "de 0% es ideal, todas terminan casi al mismo tiempo. **Fragmentación:** en "
+    "cuántas bodegas distintas queda repartido cada destino en total — menos es "
+    "mejor, porque el puerto de destino tiene que abrir menos bodegas para "
+    "descargar. **Izadas totales:** cuántas veces se mueve la grúa en toda la "
+    "carga (cada izada mueve hasta 16 unidades)."
+)
 
 kpis = resultado.kpis
 kpi_c1, kpi_c2 = st.columns(2)
@@ -213,12 +227,23 @@ st.markdown("## ⚓ Vista del buque")
 
 # 4a. Timeline de cuadrillas
 if resultado.horas_por_cuadrilla:
+    st.caption(
+        "Horas de trabajo de cada cuadrilla. Cada cuadrilla atiende un par fijo de "
+        "bodegas (1: bodegas 7+8, 2: 5+6, 3: 3+4, 4: 1+2). El buque zarpa recién "
+        "cuando termina la cuadrilla más lenta (en coral) — esa barra es el makespan."
+    )
     fig_timeline = plot_timeline_cuadrillas(resultado.horas_por_cuadrilla, resultado.makespan)
     st.plotly_chart(fig_timeline, use_container_width=True, config=_PLOTLY_CONFIG)
 else:
     st.info("No hay datos de horas por cuadrilla para mostrar el timeline.")
 
 st.markdown("### 🗺️ Distribución por bodega")
+st.caption(
+    "Vista lateral del buque, bodega por bodega (1 a la izquierda, 8 a la derecha). "
+    "Cada bodega se dibuja con sus planes (alturas) apilados — el plan 1 al fondo, "
+    "el de más arriba es el techo de la carga. \"Colorear por\" cambia qué "
+    "información muestran los colores."
+)
 
 if resultado.plan:
     # Selector de modo
@@ -239,6 +264,11 @@ if resultado.plan:
 
     # 4c. Detalle por bodega
     st.markdown("#### 📦 Detalle de capas por bodega")
+    st.caption(
+        "Las 11 capas (planes) de una bodega, apiladas como quedan realmente: "
+        "plan 1 al fondo, plan 11 arriba. Si una capa mezcla más de un destino "
+        "aparece dividida — son pocas, el modelo trata de evitarlo."
+    )
     bodega_sel = st.selectbox(
         "Ver detalle de bodega",
         options=list(range(1, 9)),
@@ -251,6 +281,11 @@ if resultado.plan:
 
     # 4d. Heatmap en expander
     with st.expander("🗺️ Fragmentación por destino", expanded=False):
+        st.caption(
+            "Cuántas unidades de cada destino hay en cada bodega. Un destino con "
+            "números en pocas columnas está poco fragmentado (bien); repartido en "
+            "muchas columnas es lo que mide el KPI de fragmentación de más arriba."
+        )
         fig_heat = plot_heatmap_destinos(resultado.plan)
         st.plotly_chart(fig_heat, use_container_width=True, config=_PLOTLY_CONFIG)
 else:
@@ -263,10 +298,15 @@ st.divider()
 # ---------------------------------------------------------------------------
 st.markdown("## 🗺️ Planimetría y secuencia de izadas")
 st.caption(
-    "Cada cuadrado es una unidad de carga. El recuadro punteado agrupa las "
-    "unidades que se mueven en una sola izada de la grúa — el número arriba "
-    "indica cuántas son. Lo óptimo es que diga 16 (capacidad del marco de la "
-    "grúa); un número menor es una izada parcial."
+    "Vista desde arriba de una sola bodega y plan (capa), elegidos abajo. Cada "
+    "cuadrado chico es una unidad de carga real, en su posición y tamaño "
+    "aproximados — el color indica producto o destino (selector abajo). Los "
+    "cuadrados se agrupan en bloques rectangulares del mismo tamaño con un "
+    "número grande encima: eso es una **izada**, lo que la grúa mueve de una sola "
+    "vez. El azul marino con \"16\" es una izada llena (la capacidad del marco de "
+    "la grúa); el naranja con un número menor es una izada parcial, sobra al "
+    "final de la capa. El orden de las izadas sigue la rotación del viaje: se "
+    "carga primero lo que se descarga al final."
 )
 
 if resultado.plan and huellas and geometria:
@@ -328,11 +368,15 @@ st.divider()
 # ---------------------------------------------------------------------------
 # Balance de peso (informativo)
 # ---------------------------------------------------------------------------
-st.markdown("## ⚖️ Balance de peso (informativo)")
+st.markdown("## ⚖️ Balance de peso")
 st.caption(
-    "El modelo no restringe peso ni distribución por bodega: se midió y no hay "
-    "evidencia de problema operativo (CLAUDE.md sección 6). Este panel es solo "
-    "informativo."
+    "El modelo intenta balancear el peso entre bodegas al momento de zarpar "
+    "(tercera prioridad, después de minimizar el tiempo de carga y las "
+    "izadas+fragmentación — nunca sacrifica esas dos por mejorar el balance). "
+    "**Dispersión relativa** es la diferencia entre la bodega con más y con menos "
+    "densidad de carga, como % del promedio — más cerca de 0% es más parejo. "
+    "Este panel muestra el resultado ya logrado, es informativo: no hay una "
+    "regla dura de \"la diferencia no puede superar X\"."
 )
 
 balance = None
@@ -368,6 +412,11 @@ st.divider()
 # Tabla del plan
 # ---------------------------------------------------------------------------
 st.markdown("### 📋 Plan de estiba por bodega")
+st.caption(
+    "El plan completo en una tabla, una fila por cada combinación de bodega, "
+    "plan (capa) y producto/destino. Es la misma información de la planimetría "
+    "y el Excel, pero en formato de lista para filtrar o buscar un valor puntual."
+)
 
 if resultado.plan:
     filas = [
@@ -452,6 +501,9 @@ with col_dl2:
 # Detalles técnicos
 # ---------------------------------------------------------------------------
 with st.expander("🔧 Detalles técnicos de la corrida"):
+    st.caption(
+        "Para quien quiera confirmar que el plan es confiable, no solo que se ve bien."
+    )
     # Bug fix: no mostrar "Estado PuLP: Optimal" directamente
     if resultado.plan:
         st.markdown("**Estado:** Solución encontrada dentro del tiempo asignado")
@@ -475,8 +527,19 @@ with st.expander("🔧 Detalles técnicos de la corrida"):
         )
 
     st.markdown("**Verificaciones:**")
+    st.caption(
+        "Chequeos automáticos sobre el plan ya calculado, no del solver — deberían "
+        "dar siempre OK; si no, hay un problema real que revisar."
+    )
+    _EXPLICACION_VERIF = {
+        "no_overstowage": "ningún destino que se descarga después queda tapando a uno que se descarga antes",
+        "cobertura": "se embarcó exactamente la cantidad pedida de cada producto y destino, ni más ni menos",
+        "contiguidad": "no hay carga \"flotando\" sobre un plan vacío dentro de una bodega",
+        "capacidad": "ninguna capa excede la capacidad física calculada por el packer",
+    }
     verif = resultado.verificaciones
     for nombre, errores in verif.items():
         icono = "✅" if not errores else "❌"
         msg = "OK" if not errores else f"{len(errores)} errores"
-        st.markdown(f"- {icono} {nombre}: {msg}")
+        explicacion = _EXPLICACION_VERIF.get(nombre, "")
+        st.markdown(f"- {icono} **{nombre}**: {msg}" + (f" — {explicacion}" if explicacion else ""))

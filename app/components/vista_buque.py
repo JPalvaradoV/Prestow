@@ -747,12 +747,12 @@ def plot_planimetria_capa(
                 x=(x0 + x1) / 2, y=y1,
                 text=f"<b>{iz.cantidad}</b>",
                 showarrow=False,
-                yshift=10,
-                font=dict(size=12, color=_BORDE_IZADA if not completa else AZUL_MARINO),
-                bgcolor=_FONDO_ETIQUETA_IZADA,
-                bordercolor=_BORDE_IZADA,
-                borderwidth=1,
-                borderpad=2,
+                yshift=16,
+                font=dict(size=18, color=BLANCO),
+                bgcolor=AZUL_MARINO if completa else _BORDE_IZADA,
+                bordercolor=BLANCO,
+                borderwidth=2,
+                borderpad=4,
             ))
 
     fig.add_shape(
@@ -762,10 +762,10 @@ def plot_planimetria_capa(
 
     fig.update_layout(
         **_LAYOUT_BASE,
-        height=460,
+        height=760,
         xaxis=dict(range=[-0.5, largo_piso + 0.5], showgrid=False, zeroline=False,
                    title="metros (eslora)"),
-        yaxis=dict(range=[-0.5, ancho_piso + 1.5], showgrid=False, zeroline=False,
+        yaxis=dict(range=[-0.5, ancho_piso + 2.2], showgrid=False, zeroline=False,
                    title="metros (manga)", scaleanchor="x", scaleratio=1),
         margin=dict(l=48, r=16, t=16, b=48),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
