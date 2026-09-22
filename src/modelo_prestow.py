@@ -136,16 +136,47 @@ APROVECHAMIENTO = 0.963
 # no-overstowage, contiguidad y cobertura). Eso da confianza en que el modelo
 # representa correctamente lo que el puerto hace en la practica.
 ARCHIVO_CAPACIDADES = "capacidades.csv"
+ARCHIVO_CAPACIDADES_POR_PLAN = "capacidades_reales_por_plan.csv"
 
-# CAPACIDAD[(bodega, producto)] = unidades maximas que caben en una capa.
-# Vacio significa que se usa la aproximacion por area.
+# CAPACIDAD[(bodega, producto)] = unidades maximas que caben en una capa,
+# EL MISMO VALOR PARA TODOS LOS PLANES. Vacio significa que se usa la
+# aproximacion por area. Sigue siendo el valor por defecto: CAPACIDAD_POR_PLAN
+# (abajo) lo pisa solo donde hay un dato real verificado de un plan concreto.
 CAPACIDAD = {}
 
-# A[h,t]: area utilizable del piso en el plan t de la bodega h, en m2.
-# SUPUESTO: la geometria no cambia con la altura. Para el Kiwi Arrow solo hay
-# plantillas propias de los planes 1 a 6; del 7 al 11 no hay dato propio (las
-# plantillas de esos planes en el archivo son del Eagle Arrow, otro buque, y
-# no se usan aqui).
+# CAPACIDAD_POR_PLAN[(bodega, plan, producto)] = unidades maximas reales para
+# esa combinacion EXACTA, extraidas de las plantillas del puerto (LH-1 a
+# LH-8, archivo PLANIMETRIAS_MN_KIWI_ARROW). Pisa a CAPACIDAD cuando existe.
+#
+# HISTORIAL: se penso por mucho tiempo que "para el Kiwi Arrow solo hay
+# plantillas propias de los planes 1 a 6" -- eso salio de revisar solo la
+# hoja LH-1 (bodega 1), que en efecto solo tiene Kiwi Arrow hasta el plan 6
+# (el resto son plantillas del Eagle Arrow, otro buque). Al revisar las 8
+# hojas completas (sesion del 22 de septiembre de 2026) aparecieron 57
+# plantillas propias del Kiwi Arrow cubriendo planes 1 a 11 en las bodegas 2
+# a 8. Comparando la MISMA combinacion bodega+producto entre distintos
+# planes, la mayoria de las bodegas no muestran variacion real (0-3%, dentro
+# del ruido), pero las bodegas 4, 5, 7 y 8 sí muestran una caida real de
+# 3-13% en los planes altos (8-10) respecto de los bajos/medios -- consistente
+# con que cerca de la cubierta hay menos piso util (vigas, escotilla mas
+# angosta que la bodega).
+#
+# CRITERIO DE LIMPIEZA (ver src/extraer_capacidades_reales.py para el
+# detalle): se excluyeron (a) las plantillas con producto ambiguo (mezclan 2
+# productos en una sola celda, ej "ARAUCO BKP / EKP" -- no se puede saber a
+# cual atribuir el numero), (b) 10 combinaciones bodega+plan+producto donde
+# dos plantillas distintas del mismo archivo daban valores distintos (ej.
+# bodega 4 plan 9 ARAUCO_EKP: 362 en una plantilla, 341 en otra), y (c) un
+# valor extremo (bodega 5, plan 10, ARAUCO_EKP = 174, un salto de -55%
+# respecto del resto de esa bodega) que no se pudo confirmar si es un dato
+# real o un error de tipeo en la planilla del puerto. No se inventa ningun
+# numero: donde no hay dato limpio, se usa el valor por defecto de CAPACIDAD.
+CAPACIDAD_POR_PLAN = {}
+
+# A[h,t]: area utilizable del piso en el plan t de la bodega h, en m2. Sigue
+# siendo una aproximacion uniforme (no varia con t) -- ver CAPACIDAD_POR_PLAN
+# arriba para las combinaciones donde SI hay un dato real de capacidad por
+# plan; AREA solo se usa como respaldo cuando ni eso ni CAPACIDAD existen.
 AREA = {
     (h, t): PISO[h][0] * PISO[h][1] * APROVECHAMIENTO
     for h in BODEGAS
@@ -629,13 +660,42 @@ def cargar_capacidades(ruta=None):
     return True
 
 
-def capacidad_unidades(h, p):
+def cargar_capacidades_por_plan(ruta=None):
+    """
+    Lee la tabla de capacidades reales por plan (ver CAPACIDAD_POR_PLAN),
+    generada por src/extraer_capacidades_reales.py a partir de las
+    plantillas del puerto. Devuelve True si se cargo, False si el archivo no
+    existe -- sin ella el modelo sigue funcionando igual, solo que con
+    CAPACIDAD (un valor por bodega+producto para todos los planes).
+    """
+    global CAPACIDAD_POR_PLAN
+    ruta = Path(ruta or ARCHIVO_CAPACIDADES_POR_PLAN)
+    if not ruta.exists():
+        return False
+
+    CAPACIDAD_POR_PLAN = {}
+    with open(ruta, newline="", encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            clave = (int(r["bodega"]), int(r["plan"]), r["producto"].strip())
+            CAPACIDAD_POR_PLAN[clave] = int(r["unidades_max_real"])
+    return True
+
+
+def capacidad_unidades(h, p, t=None):
     """
     Unidades del producto p que caben en una capa de la bodega h.
 
-    Usa la tabla del packer si esta disponible. Si no, cae a la aproximacion
-    por area, que ignora la forma de las piezas.
+    Si se da el plan t y hay un dato real verificado para esa combinacion
+    exacta (bodega, plan, producto) en CAPACIDAD_POR_PLAN, se usa ese valor
+    -- viene de las plantillas del puerto, mas preciso que el calculo
+    geometrico porque refleja la geometria real de ESE plan, no un promedio.
+    Si no, cae a CAPACIDAD (tabla del packer, mismo valor para todos los
+    planes) y despues a la aproximacion por area.
     """
+    if t is not None and CAPACIDAD_POR_PLAN:
+        v = CAPACIDAD_POR_PLAN.get((h, t, p))
+        if v is not None:
+            return v
     if CAPACIDAD:
         v = CAPACIDAD.get((h, p))
         if v is not None:
@@ -709,7 +769,7 @@ def construir_modelo():
     x = {
         (h, t, p, d): pulp.LpVariable(
             f"x_{h}_{t}_{p}_{d}", lowBound=0, cat="Integer",
-            upBound=min(capacidad_unidades(h, p), DEMANDA[(p, d)]),
+            upBound=min(capacidad_unidades(h, p, t), DEMANDA[(p, d)]),
         )
         for h in BODEGAS for t in PLANES for (p, d) in combos
     }
@@ -783,7 +843,7 @@ def construir_modelo():
     # combinaciones que deben repartirse en el buque. Se omite por costo.
     M = {
         (h, t, p, d): min(
-            capacidad_unidades(h, p),        # (a) limite fisico de la capa
+            capacidad_unidades(h, p, t),      # (a) limite fisico de la capa
             DEMANDA[(p, d)],                 # (b) limite de demanda
         )
         for h in BODEGAS for t in PLANES for (p, d) in combos
@@ -813,7 +873,7 @@ def construir_modelo():
         for t in PLANES:
             prob += (
                 pulp.lpSum(
-                    x[(h, t, p, d)] / capacidad_unidades(h, p)
+                    x[(h, t, p, d)] / capacidad_unidades(h, p, t)
                     for (p, d) in combos
                 ) <= 1,
                 f"capacidad_{h}_{t}",
@@ -905,7 +965,7 @@ def construir_modelo():
         for h in BODEGAS:
             for t in PLANES[:-1]:
                 fraccion_ocupada = pulp.lpSum(
-                    x[(h, t, p, d)] / capacidad_unidades(h, p)
+                    x[(h, t, p, d)] / capacidad_unidades(h, p, t)
                     for (p, d) in combos
                 )
                 prob += (
@@ -1301,7 +1361,7 @@ def verificar_capacidad(filas):
     fraccion = defaultdict(float)
     for f in filas:
         fraccion[(f["bodega"], f["plan"])] += (
-            f["unidades"] / capacidad_unidades(f["bodega"], f["producto"])
+            f["unidades"] / capacidad_unidades(f["bodega"], f["producto"], f["plan"])
         )
     excesos = []
     for (h, t), fr in fraccion.items():
@@ -1714,6 +1774,11 @@ def main(carpeta_datos=None, interactivo=True):
         print(f"\nNo se encontro '{ARCHIVO_CAPACIDADES}'.")
         print("  Se usa la aproximacion por area, que ignora la forma de las piezas.")
         print("  Para el calculo geometrico real, ejecutar antes: python3 packer_2d.py")
+
+    if cargar_capacidades_por_plan():
+        print(f"Capacidades reales por plan cargadas de '{ARCHIVO_CAPACIDADES_POR_PLAN}': "
+              f"{len(CAPACIDAD_POR_PLAN)} combinaciones bodega-plan-producto verificadas")
+        print("  Estas pisan el calculo geometrico donde hay dato real del puerto.")
 
     print("\nVerificando datos de entrada...")
     errores = verificar_datos()

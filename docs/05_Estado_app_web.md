@@ -535,3 +535,100 @@ número grande (azul marino = 16 completas, coral = parcial) — mucho más
 legibles a simple vista, que era el pedido original del usuario.
 
 Commit: `8d245c6`.
+
+---
+
+## 12. Capacidad real por plan (misma sesión, pendiente #5 de CLAUDE.md)
+
+A pedido explícito del dueño del proyecto, marcado como "el más importante"
+de la lista de pendientes. Resumen ejecutivo en CLAUDE.md sección 6
+("Capacidad real por plan") y sección 7 (supuesto #5). Acá el detalle.
+
+### El bloqueo inicial y cómo se resolvió
+
+Los datos reales viven en `PLANIMETRIAS_MN_KIWI_ARROW_2025.xls` (planilla
+original del puerto, no versionada — `data/raw/` estaba vacía en esta
+sesión). El usuario tenía su copia local en el Escritorio (sincronizado con
+OneDrive: `OneDrive/Escritorio/capstone/`); se copió a `data/raw/` para que
+el proceso sea reproducible dentro del repo.
+
+### El hallazgo que cambió el diagnóstico
+
+CLAUDE.md decía "para el Kiwi Arrow solo hay plantillas propias de los
+planes 1 a 6" — eso salió de revisar solo la hoja LH-1 (bodega 1), que en
+efecto solo tiene Kiwi Arrow hasta el plan 6 (el resto son plantillas del
+Eagle Arrow, otro buque, mezcladas en el mismo archivo — mismo tipo de error
+ya documentado en la sección 8 de CLAUDE.md sobre las hojas del Misago
+Arrow). Al revisar las 8 hojas completas (LH-1 a LH-8) aparecieron **57
+plantillas propias del Kiwi Arrow cubriendo planes 1 a 11** en las bodegas 2
+a 8 — un hallazgo que contradice directamente lo que decía la documentación
+existente.
+
+### Análisis: aislar el efecto de la altura del efecto del producto
+
+Cada plantilla trae (bodega, producto, rango de planes, unidades/plan). Como
+cada producto tiene su propia huella, comparar unidades/plan entre
+plantillas de DISTINTO producto mezcla dos efectos. Se agrupó por
+(bodega, producto) y se comparó unidades/plan entre planes del MISMO
+producto:
+
+| Bodega | Patrón real |
+|---|---|
+| 1, 2 (BKP/CELCO), 5 (N_ALDEA_BKP), 7 (N_ALDEA_BKP) | Sin variación (0%) |
+| 2 (EKP), 3, 6 | Variación leve (1-3%), ruido |
+| **4, 5 (BKP), 7 (BKP/EKP), 8** | **Caída real de 3-13% en planes altos (8-10)** |
+| 5 (ARAUCO_EKP) | Caso extremo: 385 en planes 1-7, 174 en el plan 10 (-55%) — no se pudo confirmar, excluido |
+
+Tiene sentido físico: cerca de la cubierta (planes altos) suele haber vigas,
+refuerzos, y la escotilla no siempre cubre todo el ancho de la bodega.
+
+### Criterio de limpieza (ver docstring de `src/extraer_capacidades_reales.py`)
+
+No se inventó ningún número. Se excluyeron:
+1. **Productos ambiguos**: plantillas que mezclan 2 productos en una celda
+   (ej. "ARAUCO BKP / EKP") — no se puede atribuir el número a uno solo.
+2. **Conflictos**: 10 combinaciones (bodega, plan, producto) donde dos
+   plantillas del mismo archivo dan valores distintos (ej. bodega 4, plan 9,
+   ARAUCO_EKP: 362 en una, 341 en otra). Se descartan enteras.
+3. **Un valor extremo sin confirmar**: bodega 5, plan 10, ARAUCO_EKP = 174.
+
+Quedaron **72 combinaciones limpias** en
+`data/capacidades_reales_por_plan.csv`.
+
+### Cambios de código
+
+- `src/extraer_capacidades_reales.py` — nuevo. Lee las 8 hojas del archivo
+  raw, parsea los rangos de planes en español ("PRIMER A SEXTO PLAN" → 1-6),
+  aplica el criterio de limpieza de arriba, y escribe el CSV. Reproducible:
+  `python3 src/extraer_capacidades_reales.py`.
+- `src/modelo_prestow.py` — nuevo global `CAPACIDAD_POR_PLAN[(bodega, plan,
+  producto)]`, nueva función `cargar_capacidades_por_plan()`,
+  `capacidad_unidades(h, p, t=None)` gana el parámetro `t` opcional (si se
+  da y hay dato real para esa combinación exacta, pisa a `CAPACIDAD`). Se
+  actualizaron los 5 sitios donde se llamaba `capacidad_unidades(h, p)`
+  dentro de `construir_modelo()` (cota de `x`, `M` del enlace, restricción de
+  capacidad de la capa, restricción de llenado mínimo) para pasar `t` — los
+   5 ya estaban dentro de un loop `for t in PLANES`, cambio mecánico. También
+  `verificar_capacidad()` (para que la verificación use la misma capacidad
+  real que uso el solver, no la aproximación uniforme).
+- `src/api.py` — `CAPACIDAD_POR_PLAN` agregado a `_NOMBRES_GLOBALES` (para
+  que el lock guarde/restaure correctamente), `resolver_prestow()` carga
+  `data/capacidades_reales_por_plan.csv` automáticamente. Es seguro para
+  casos editados: si las claves (bodega, producto) no coinciden con las del
+  Kiwi Arrow, el override simplemente no aplica, sin romper nada.
+
+### Validación contra el caso base
+
+Corrida completa (180 s/pasada, HiGHS): **makespan 59,67 h** (antes 58,19 h,
++1,48 h / +2,5%), desbalance 5,04%, fragmentación 12, **las 4 verificaciones
+en 0 violaciones** (incluida "capacidad", la que más importaba verificar).
+El cambio de makespan es real y esperado: el modelo anterior asumía más
+capacidad de la que existe físicamente en los planes altos de las bodegas
+4, 5, 7 y 8 — este número es más honesto, no peor. Documentado con el
+cuidado que pide CLAUDE.md sección 12 ("no cambiar el makespan sin
+advertirlo") en las secciones 3, 6 y 12 de ese archivo.
+
+**Pendiente**: la validación histórica "el modelo reproduce las horas del
+archivo del puerto con error de 0,01 h" se hizo ANTES de este cambio y no se
+volvió a correr — no se sabe si sigue siendo tan precisa con la capacidad
+real activa.

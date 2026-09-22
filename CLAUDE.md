@@ -29,9 +29,11 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 | Fragmentación | 14 bodegas | 22 | peor (pasada 2 no resuelve) |
 | Overstowage | 0 | 0 | igual |
 
-**La validación más fuerte:** el modelo reproduce las horas del archivo del puerto con **error de 0,01 h** en las cuatro cuadrillas. Reproduce lo que hace el planificador real casi exactamente.
+**La validación más fuerte:** el modelo reproduce las horas del archivo del puerto con **error de 0,01 h** en las cuatro cuadrillas. Reproduce lo que hace el planificador real casi exactamente. **Esta validación se hizo antes de la sección 6 "Capacidad real por plan" — no se volvió a correr contra el modelo corregido, queda pendiente.**
 
 ⚠️ Un resultado anterior de **57,59 h** circuló en documentos previos — correspondía a la rotación con Kunsan/Ulsan empatados, que ya no es la configuración vigente. **No citarlo.**
+
+⚠️ **ACTUALIZACIÓN (22 de septiembre de 2026):** desde que el modelo usa capacidad real por plan donde hay dato verificado (ver sección 6, "Capacidad real por plan"), el makespan del caso base subió a **≈59,67 h** (180 s por pasada, una sola corrida — la pasada 1 no es perfectamente determinista corrida a corrida, ver pendiente #7 de la sección 10). Es un cambio real, no un error: el 58,19 h anterior asumía capacidad geométrica uniforme en los 11 planes, que en varias bodegas (4, 5, 7, 8) resultó ser más capacidad de la que existe físicamente en los planes altos. **No volver a citar 58,19 h como el resultado vigente del modelo** — la tabla de arriba (makespan, desbalance, fragmentación) tampoco se volvió a correr con la capacidad real y puede estar desactualizada.
 
 ## 4. Lo que se está construyendo ahora — la página web
 
@@ -75,6 +77,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 - **La bandera `SEPARAR_ROTACION_EMPATADA` fue eliminada**. No reintroducirla sin releer por qué se descartó.
 - **Merma de capacidad = 0**, avalado por el profesor como supuesto declarado.
 - **Balance de peso: decisión reabierta el 21 de septiembre de 2026, a pedido explícito del dueño del proyecto.** Antes decía "no agregar restricciones de peso ni distribución al modelo" — la razón seguía siendo válida (dispersión relativa 36,8% del modelo vs 18,9% del plan manual, sin evidencia de problema operativo), pero el dueño del proyecto pidió agregarla igual: la web genera un plan desde cero para alguien sin plan de referencia, y prefiere pagar makespan por un buque mejor balanceado. Implementado como **pasada 3 lexicográfica** (después de izadas+fragmentación) en `modelo_prestow.py`, activa por defecto (`USAR_BALANCE_PESO = True`). Balancea la carga inicial (zarpe) entre bodegas — **no** el trim puerto a puerto: se investigó balancear las 4 etapas del viaje completo y el solver nunca converge bien (se estanca en 75-77% de gap pase lo que se pruebe: sin warm start no encuentra factibilidad, con warm start encuentra pero no mejora ni con 900 s ni con tolerancia más floja). El detalle completo de la investigación está en `docs/05_Estado_app_web.md`. **No subir `ETAPAS_BALANCE_PESO` por encima de 1 sin resolver antes el problema de fondo** (relajación LP débil de la pasada 3, no un tema de tiempo ni de parámetros).
+- **Capacidad real por plan: implementado el 22 de septiembre de 2026, a pedido explícito del dueño del proyecto** (pendiente #5 de la sección 10, "el packer no distingue altura"). Se revisaron las 8 hojas completas de `PLANIMETRIAS_MN_KIWI_ARROW_2025.xls` (antes solo se había revisado LH-1) y aparecieron 57 plantillas propias del Kiwi Arrow cubriendo planes 1-11 en bodegas 2-8 — mucho más de lo que se creía. Comparando la misma combinación bodega+producto entre planes: la mayoría de las bodegas no varían (0-3%, ruido), pero las **bodegas 4, 5, 7 y 8 muestran una caída real de 3-13% en los planes altos (8-10)**. Nuevo global `CAPACIDAD_POR_PLAN[(bodega, plan, producto)]` en `modelo_prestow.py`, pisa a `CAPACIDAD` (el valor uniforme del packer) donde hay dato real verificado — 72 combinaciones limpias tras excluir productos ambiguos, 10 conflictos entre plantillas del mismo archivo, y 1 valor extremo sin confirmar (bodega 5, plan 10, ARAUCO_EKP = 174, -55%). Extracción reproducible en `src/extraer_capacidades_reales.py` (lee `data/raw/PLANIMETRIAS_MN_KIWI_ARROW_2025.xls`, no versionado). **Esto cambió el makespan del caso base de 58,19 h a ≈59,67 h — ver sección 3, es un cambio real y esperado, no un bug.**
 
 ## 7. Los 9 supuestos, con su estado actual
 
@@ -84,7 +87,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 | 2 | Rendimientos t/h del archivo (140 bod 1, 270 el resto) | Sin confirmar |
 | 3 | Pares de cuadrillas son fijos: (8+7), (6+5), (4+3), (2+1) | Sin confirmar |
 | 4 | Huellas de los productos | **Resuelto** — verificadas en 58 plantillas |
-| 5 | Acortamiento de bodega en planes altos | **Descartado** — era del Eagle Arrow |
+| 5 | Acortamiento de bodega en planes altos | **Parcialmente confirmado (22-sep-2026)** — se había descartado por revisar solo la hoja LH-1 (bodega 1), donde en efecto los planes altos son del Eagle Arrow. Al revisar las 8 hojas completas, las bodegas 4, 5, 7 y 8 SÍ muestran una caída real de capacidad de 3-13% en planes altos (8-10) con datos propios del Kiwi Arrow. Ver "Capacidad real por plan" en sección 6. |
 | 6 | Tiempo por izada | **Corregido** — varía por bodega (13,91 min bod 1 vs 7,15 el resto) |
 | 7 | Sin bloqueo entre destinos dentro de una capa | Declarado |
 | 8 | Sin merma por separadores, maniobra ni medidas no netas | Avalado por el profesor |
@@ -94,7 +97,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 
 | Error | Cómo se detectó |
 |---|---|
-| Leer solo la hoja LH-1 de planimetrías | El archivo tiene 58 plantillas del Kiwi Arrow en LH-1 a LH-8 |
+| Leer solo la hoja LH-1 de planimetrías | El archivo tiene 58 plantillas del Kiwi Arrow en LH-1 a LH-8. Este mismo error se repitió una segunda vez (22-sep-2026): de la revisión parcial de LH-1 se generalizó "solo hay plantillas propias del Kiwi Arrow hasta el plan 6" a TODAS las bodegas, cuando en realidad bodegas 2-8 sí tienen plantillas propias hasta el plan 11. Verificar siempre las 8 hojas antes de asumir qué datos faltan. |
 | Trabajar sobre hojas ocultas del Misago Arrow | 4 hojas ocultas de 2017, mismo formato — se construyeron análisis sobre el buque equivocado |
 | Contigüidad sobre `y` (activable sin carga) | El solver dejaba carga flotando; se agregó `w` con implicación en ambos sentidos |
 | Tiempo de izada constante | Subestimaba la bodega 1, que determina el makespan |
@@ -137,7 +140,7 @@ En orden de prioridad:
 2. **Warm start desde el plan real** — daría garantía de que el resultado nunca es peor que 60,61 h.
 3. **275 unidades sin reconciliar** entre las dos vías de extracción.
 4. **La pasada 2 no resuelve en 150-180 s** — por eso la fragmentación quedó sin optimizar.
-5. **El packer no distingue altura** — asume los 11 planes iguales.
+5. ~~El packer no distingue altura~~ — **Resuelto el 22 de septiembre de 2026** para las combinaciones con dato real verificado (72 de las posibles, ver "Capacidad real por plan" en sección 6). El packer sigue sin distinguir altura por sí mismo (sigue siendo geométrico uniforme); lo que cambió es que `modelo_prestow.py` ahora pisa ese cálculo con datos reales del puerto donde existen.
 6. **Pruebas automatizadas** — todo se verifica a mano.
 7. **La pasada 3 (balance de peso) no converge de forma estable entre corridas.** A diferencia del resto del modelo (determinista, ver `data/stability_report.csv`), la pasada 3 nunca prueba optimalidad dentro del tiempo estándar (gap ~16-55% visto en pruebas, varía de corrida en corrida por el no-determinismo de HiGHS). El resultado siempre es un balance real y válido, pero no comparable número a número entre dos corridas del mismo caso. No confundir esto con el ítem 1 (que es sobre el resto del modelo, ya determinista).
 
@@ -159,7 +162,7 @@ En orden de prioridad:
 - **No inventar cifras** para completar ejemplos o tests. Si falta un dato, marca el test como pendiente.
 - **No usar solvers con licencia** (CPLEX, Gurobi, Mosek). Solo HiGHS o CBC.
 - **No introducir dependencias nuevas** sin agregarlas a `requirements.txt` y explicarlo en el commit.
-- **No cambiar el makespan del caso base sin advertirlo.** Cualquier cambio que altere 58,19 h debe justificarse.
+- **No cambiar el makespan del caso base sin advertirlo.** Cualquier cambio que altere el makespan vigente debe justificarse. **El valor vigente ya NO es 58,19 h — es ≈59,67 h desde el 22 de septiembre de 2026** (capacidad real por plan, ver sección 6). El cambio está justificado y documentado; lo que no se debe hacer es introducir OTRO cambio sin la misma documentación.
 - **No usar `assert` para validación en producción**. `assert` solo en tests.
 - **No usar la palabra "óptimo"** en la interfaz sin gap cero verificado. El resultado actual tiene gap de 0,195%.
 

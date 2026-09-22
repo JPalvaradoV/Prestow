@@ -45,11 +45,13 @@ _NOMBRES_GLOBALES = [
     "AREA",
     "DEMANDA",
     "CAPACIDAD",
+    "CAPACIDAD_POR_PLAN",
 ]
 
 # Ruta absoluta al directorio raíz del proyecto (src/../)
 _RAIZ = Path(__file__).parent.parent
 _DEFAULT_CAPACIDADES = _RAIZ / "data" / "capacidades.csv"
+_DEFAULT_CAPACIDADES_POR_PLAN = _RAIZ / "data" / "capacidades_reales_por_plan.csv"
 
 
 # =============================================================================
@@ -274,6 +276,11 @@ def resolver_prestow(
             # 1. Cargar datos (modifica globales del módulo)
             _mp.cargar_datos(str(ruta_datos))
             _mp.cargar_capacidades(str(ruta_capacidades))
+            # Capacidades reales por plan (ver modelo_prestow.CAPACIDAD_POR_PLAN):
+            # solo pisa combinaciones (bodega, plan, producto) que coincidan
+            # exactamente: si el caso es editado (otros nombres de producto,
+            # otras bodegas) simplemente no aplica, sin romper nada.
+            _mp.cargar_capacidades_por_plan(str(_DEFAULT_CAPACIDADES_POR_PLAN))
 
             # 2. Validar coherencia
             errores = _mp.verificar_datos()
