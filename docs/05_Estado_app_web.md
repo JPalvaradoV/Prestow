@@ -497,3 +497,41 @@ ayudó lo suficiente para justificar el riesgo de empeorar la fragmentación),
 falta más tiempo con 1 etapa). Antes de subir `ETAPAS_BALANCE_PESO`, resolver
 el problema de fondo de la relajación débil — ya se probó que más tiempo y
 más tolerancia no alcanzan por sí solos.
+
+---
+
+## 11. Izadas como bloques rectangulares + explicaciones (misma sesión, después de probar la hoja Planimetría)
+
+El usuario probó la hoja "Planimetría" del Excel y notó que algunas izadas
+quedaban con forma de L (parte de una columna de la grilla + parte de la
+siguiente) — señaló correctamente que eso no tiene sentido físico: una grúa
+no levanta 16 fardos desparramados en dos columnas distintas como si
+estuvieran amarrados.
+
+**Causa:** `secuencia_izadas.calcular_secuencia()` agrupaba las unidades
+contando 16 en el orden de barrido (columna por columna). Correcto en
+cantidad, no en forma.
+
+**Fix:** `src/layout_capa.py` — `UnidadPosicion` gana `fila`/`columna`
+(índice dentro de la grilla de su propio grupo producto+destino, poblado en
+`_rellenar_zona`). `src/secuencia_izadas.py` — nuevo algoritmo
+`_dimensiones_bloque()` elige el rectángulo más parecido a un cuadrado que
+quepa en ≤16 unidades (para una grilla 10×20 da 4×4, no 1×16), y
+`_bloques_del_grupo()` tila toda la grilla con ese tamaño, recorriendo los
+bloques en serpentina. 4 tests nuevos verifican matemáticamente que cada
+bloque sea un rectángulo real (sin huecos, sin superposición, cobertura
+completa). Se aplica igual en el gráfico de la web y en la hoja Excel.
+
+Además se agregaron explicaciones en lenguaje simple en cada sección de
+`2_Resultados.py` y una nota (`_hoja_tabla(..., nota=...)`) en cada hoja
+nueva del Excel, más una leyenda de colores por producto en "Planimetría".
+De paso se corrigió una nota desactualizada en "Balance de peso" que todavía
+decía "el modelo no restringe peso" — ya no es cierto desde la pasada 3
+(sección 10 de este documento).
+
+`plot_planimetria_capa()` en `vista_buque.py`: altura 460→760, y las
+etiquetas de conteo por izada pasaron de texto chico a placas sólidas con
+número grande (azul marino = 16 completas, coral = parcial) — mucho más
+legibles a simple vista, que era el pedido original del usuario.
+
+Commit: `8d245c6`.
