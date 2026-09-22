@@ -110,7 +110,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 | Métrica | Valor |
 |---|---|
 | Buque | Kiwi Arrow (G2 Ocean) |
-| Unidades totales | **29.332** (extracción actual; hay 275 sin reconciliar respecto de 29.057 citado por otra vía) |
+| Unidades totales | **29.332** — confirmado como **PROGRAMA LQN** (ver pendiente #3, resuelto en sección 10) |
 | Toneladas totales | 59.197 |
 | Bodegas cargadas | 8 de 8 |
 | Peso por unidad | 2,02 t (constante) |
@@ -138,7 +138,7 @@ En orden de prioridad:
 
 1. **Estabilidad de la asignación entre corridas.** No se sabe cuánto varía. Mientras no se corran las 5 semillas, **cualquier análisis sobre "en qué bodega quedó qué"** puede ser ruido. La web no debería mostrar detalle por bodega con confianza hasta cerrar esto.
 2. **Warm start desde el plan real** — daría garantía de que el resultado nunca es peor que 60,61 h.
-3. **275 unidades sin reconciliar** entre las dos vías de extracción.
+3. ~~275 unidades sin reconciliar~~ — **Resuelto el 22 de septiembre de 2026.** La hoja "PRESTOW N° 06" de `data/raw/PRESTOW_N_10_KIWI_ARROW_FE_042025.xls` trae, por bodega, dos programas paralelos: `PROGRAMA G2OCEAN` y `PROGRAMA LQN` (filas 75-76 de cada bloque de bodega), además de un total `HOLD NRO. X` en unidades (fila 74). Sumando a mano los bloques individuales de carga (destino+producto+UNITS+TONS) en las tres bodegas responsables de toda la brecha (7: +150, 5: −68, 3: +193, suman exactamente 275), el total y las toneladas calzan **exactas, al centavo**, con `PROGRAMA LQN` — no con `HOLD NRO.`. `DEMANDA` (29.332) es la suma de esos mismos bloques en las 8 bodegas, o sea corresponde a PROGRAMA LQN — el programa propio de Lirquén, consistente con que el modelo ya se calibra contra el archivo del puerto. 29.057 es la suma de `HOLD NRO.`, que coincide con LQN en 5 de 8 bodegas pero no en esas 3. El propio archivo del puerto ya traía la brecha marcada (fila 73, columnas 33-35: 29057/29332/-275) sin resolverla — no era un error de nuestra extracción. No se tocó `modelo_prestow.py`: `DEMANDA` ya usaba el valor correcto.
 4. **La pasada 2 no resuelve en 150-180 s** — por eso la fragmentación quedó sin optimizar.
 5. ~~El packer no distingue altura~~ — **Resuelto el 22 de septiembre de 2026** para las combinaciones con dato real verificado (72 de las posibles, ver "Capacidad real por plan" en sección 6). El packer sigue sin distinguir altura por sí mismo (sigue siendo geométrico uniforme); lo que cambió es que `modelo_prestow.py` ahora pisa ese cálculo con datos reales del puerto donde existen.
 6. **Pruebas automatizadas** — todo se verifica a mano.

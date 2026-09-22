@@ -632,3 +632,48 @@ advertirlo") en las secciones 3, 6 y 12 de ese archivo.
 archivo del puerto con error de 0,01 h" se hizo ANTES de este cambio y no se
 volvió a correr — no se sabe si sigue siendo tan precisa con la capacidad
 real activa.
+
+## 13. Pendiente #3 resuelto — las 275 unidades eran dos programas distintos
+
+**Fecha:** 22 de septiembre de 2026. **Origen:** el archivo `PRESTOW N° 06`
+de `data/raw/PRESTOW_N_10_KIWI_ARROW_FE_042025.xls` (no versionado, copiado
+desde el Escritorio/OneDrive del usuario) mostraba en la fila 73 (columnas
+33-35) los valores 29057 / 29332 / -275, es decir, el propio puerto ya
+llevaba registrada la diferencia entre dos totales sin explicarla.
+
+**Investigación:** cada bloque de bodega en esa hoja trae, además del total
+`HOLD NRO. X` (fila 74, en unidades), dos filas más: `PROGRAMA G2OCEAN` y
+`PROGRAMA LQN` (filas 75-76, en toneladas) — dos programas de estiba
+paralelos para el mismo viaje. Se sumaron a mano todos los bloques
+individuales de carga (destino + producto + valor UNITS + valor TONS,
+repartidos por toda la hoja) en las tres bodegas que concentran toda la
+brecha:
+
+| Bodega | Suma bloques (unidades) | HOLD NRO. | Diferencia | Suma bloques (toneladas) | PROGRAMA LQN (toneladas) |
+|---|---|---|---|---|---|
+| 7 | 4013 | 3863 | +150 | 8120,181467378 | 8120,181467378 (exacto) |
+| 5 | 3604 | 3672 | −68 | 7308,49 | 7308,46670458 (exacto al redondeo) |
+| 3 | 3854 | 3661 | +193 | 7766,51 | 7766,508371228 (exacto al redondeo) |
+
++150 − 68 + 193 = 275, exacto. Las toneladas de la suma bloque-a-bloque
+calzan con `PROGRAMA LQN`, no con `HOLD NRO.`, en las tres bodegas.
+
+**Conclusión:** `DEMANDA` (29.332, lo que usa `modelo_prestow.py`) es la
+suma de esos mismos bloques individuales en las 8 bodegas — corresponde a
+`PROGRAMA LQN`, el programa propio de Lirquén. `29.057` es la suma de
+`HOLD NRO.`, que coincide con LQN en 5 de las 8 bodegas pero no en 7, 5 y 3
+(probablemente el conteo de G2Ocean, la naviera, aunque esto no se verificó
+con el mismo nivel de detalle). No hubo error de extracción de nuestra
+parte ni del puerto: son dos planes reales que no coinciden en 3 bodegas, y
+el archivo del puerto ya lo sabía.
+
+**No se modificó ningún código.** `DEMANDA` ya usaba 29.332, el valor
+correcto (PROGRAMA LQN). Este hallazgo solo documenta por qué ese número es
+el que hay que seguir citando — ver CLAUDE.md sección 9 y 10 (pendiente #3).
+
+**No verificado:** las otras 5 bodegas (8, 6, 4, 2, 1) no se sumaron
+bloque a bloque con este mismo detalle — se sabía de antes que su total
+coincide entre `HOLD NRO.` y la suma de bloques, así que probablemente ahí
+`PROGRAMA G2OCEAN` = `PROGRAMA LQN` (sin diferencia entre programas), pero
+no se confirmó explícitamente. Tampoco se revisó si otras hojas del archivo
+(otras rotaciones, u otros PRESTOW) tienen el mismo patrón de dos programas.
