@@ -893,3 +893,64 @@ sección 3 ("Resultados verificados del caso base"), que seguía citando
 correr. Con los números de hoy, la fragmentación del modelo (10) es
 **mejor** que la del plan manual (14) — antes decía "peor (pasada 2 no
 resuelve)", ya no es el caso.
+
+## 16. Re-validación de la validación de horas por cuadrilla (misma sesión)
+
+El usuario pidió revalidar específicamente "el modelo reproduce las horas
+del archivo del puerto con error de 0,01 h" (CLAUDE.md sección 3, marcada
+como pendiente desde la sesión de capacidad real por plan).
+
+**Hallazgo clave: esta validación no depende del makespan del modelo ni de
+ninguno de los cambios de hoy.** Compara dos cosas que NINGÚN cambio de
+esta sesión (ni la anterior) toca:
+
+1. Las horas reales por bodega del archivo del puerto — fila "HORAS
+   TRABAJO x LH" de la hoja "PRESTOW N° 06" (`data/raw/
+   PRESTOW_N_10_KIWI_ARROW_FE_042025.xls`, fila 77 en la lectura con
+   `xlrd`): 26,55 / 30,07 / 31,42 / 27,07 / 28,50 / 28,76 / 32,09 / 28,52 h
+   para bodegas 8 a 1. Dato histórico fijo del plan manual, no algo que el
+   modelo produce.
+2. `TIEMPO_CICLO_POR_BODEGA` — constante hardcodeada en `modelo_prestow.py`
+   (7,14 / 7,19 / 7,11 / 7,19 / 7,15 / 7,16 / 7,16 / 13,91 min), sin tocar
+   en ninguna de las dos sesiones recientes.
+
+La validación es: recuperar las izadas reales por bodega
+(`round(horas_declaradas × 60 / tiempo_ciclo_min)`) y sumar
+`izadas × tiempo_ciclo` por cuadrilla (bodegas 8+7, 6+5, 4+3, 2+1), contra
+las horas por cuadrilla que el propio archivo reporta (fila 78 de la misma
+hoja: 56,62 / 58,49 / 57,26 / 60,61 h). Como ninguno de los dos insumos
+cambió, el resultado no podía haber cambiado — se re-corrió igual para
+confirmarlo con código, no de memoria: **error máximo 0,023 h**, coincide
+con el 0,01-0,02 h documentado en `docs/01_Contexto_Informe_Academico.md`.
+
+De paso quedó documentada la estructura completa de la hoja "PRESTOW N° 06"
+para quien necesite volver a leerla (no había quedado registrada en ninguna
+sesión anterior, solo se habían leído fragmentos puntuales para la
+reconciliación de las 275 unidades):
+
+- Filas 17-71: 11 bloques de 5 filas cada uno (destino, producto, etiqueta
+  de aseguramiento, UNITS, TONS), uno por plan, de PLAN 11 (arriba, fila
+  17) a PLAN 1 (fondo, fila 67) — el orden de filas es correcto, no
+  invertido. Cada bodega ocupa un rango de columnas (aproximadamente 4
+  columnas, arrancando en 1/5/9/13/17/21/25/29 para bodegas 8/7/6/5/4/3/2/1
+  respectivamente, indicado en la fila 16 "HOLD NRO. X") que se ENSANCHA
+  cuando un plan tiene más de un producto/destino en la misma capa (capa
+  mixta) — no son rangos fijos, hay que ubicarlos por proximidad al header
+  de cada bodega, no por un rango de columnas fijo.
+- Fila 72: geometría de cada bodega (ej. "18,30 X 27,40 X 19,26").
+- Fila 73: total de unidades por bodega ("HOLD NRO. X"), y en las columnas
+  finales 29.057 / 29.332 / -275 (la brecha del pendiente #3, CLAUDE.md
+  sección 10, ya resuelta).
+- Filas 74-76: `PROGRAMA G2OCEAN`, `PROGRAMA LQN` y su diferencia, por
+  bodega (ver pendiente #3 resuelto).
+- Fila 77: horas de trabajo declaradas por bodega ("HORAS TRABAJO x LH").
+- Fila 78: horas por CUADRILLA (suma de las 2 bodegas correspondientes),
+  sin etiqueta de fila explícita — hay que ubicarla por posición de
+  columna, alineada con el bloque "HOLD NRO." de la bodega de la izquierda
+  de cada cuadrilla.
+
+No se creó un script reproducible para esto (a diferencia de
+`extraer_capacidades_reales.py`) porque es una validación estática de un
+dato histórico fijo, no algo que haya que re-correr cuando cambie el
+modelo — si vuelve a hacer falta, este párrafo tiene todo lo necesario para
+rehacerla en minutos.
