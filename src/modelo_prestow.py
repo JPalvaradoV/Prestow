@@ -29,19 +29,13 @@ import pulp
 # "PRESTOW N 06". Extraidos programaticamente de las celdas UNITS/TONS de cada
 # bodega y plan (tarea maestra 5).
 #
-# ATENCION - RECONCILIACION PENDIENTE:
-# La extraccion suma 29.332 unidades. La cifra citada en todo el proyecto hasta
-# ahora, verificada por otra via, es 29.057 (diferencia de 275 unidades, 0,9%).
-# Causa identificada parcialmente: el archivo nombra al mismo producto de dos
-# formas distintas en celdas distintas -- "CELCO UKP" en unas, "CELCO" a secas
-# en otras (filas 18, 23, 68, columnas 9/17/25 de la hoja). Se fusionaron como
-# el mismo producto para esta extraccion, pero es una decision, no un dato
-# verificado. El resto de la diferencia no se pudo rastrear a una causa unica
-# dentro del tiempo disponible.
-# ACCION REQUERIDA antes de dar estos datos por definitivos: revisar la fila 73
-# (totales por bodega) del Excel celda por celda contra esta extraccion, y
-# registrar el hallazgo de "CELCO" vs "CELCO UKP" en la bitacora de
-# discrepancias (tarea 7).
+# RECONCILIACION (resuelta 22-sep-2026): la extraccion suma 29.332 unidades,
+# que calza exacto (unidades y toneladas) con el "PROGRAMA LQN" de la hoja --
+# el programa propio de Lirquen. La cifra 29.057 que circulo antes es la suma
+# de "HOLD NRO.", que difiere de LQN en las bodegas 3, 5 y 7 (+193, -68,
+# +150 = 275). El propio archivo del puerto ya marcaba esa brecha en la fila
+# 73. Detalle en CLAUDE.md, seccion 10, pendiente #3. Sigue siendo decision
+# declarada fusionar "CELCO" a secas con "CELCO UKP" (filas 18, 23, 68).
 
 # --- Conjuntos ---------------------------------------------------------------
 
@@ -135,8 +129,15 @@ APROVECHAMIENTO = 0.963
 # real del caso base satisface las cuatro restricciones del modelo (capacidad,
 # no-overstowage, contiguidad y cobertura). Eso da confianza en que el modelo
 # representa correctamente lo que el puerto hace en la practica.
+#
+# Rutas relativas al directorio de trabajo; si ahi no existen, se buscan en
+# data/ de la raiz del proyecto (ver _ruta_con_respaldo). Sin ese respaldo,
+# el comando documentado (python3 src/modelo_prestow.py ... desde la raiz)
+# no encontraba capacidades_reales_por_plan.csv -- vive solo en data/ -- y
+# corria sin avisar con la capacidad uniforme vieja (detectado 24-sep-2026).
 ARCHIVO_CAPACIDADES = "capacidades.csv"
 ARCHIVO_CAPACIDADES_POR_PLAN = "capacidades_reales_por_plan.csv"
+_CARPETA_DATOS_PROYECTO = Path(__file__).resolve().parent.parent / "data"
 
 # CAPACIDAD[(bodega, producto)] = unidades maximas que caben en una capa,
 # EL MISMO VALOR PARA TODOS LOS PLANES. Vacio significa que se usa la
@@ -264,12 +265,19 @@ LIMITE_SEGUNDOS = 120
 # configuracion final (ETAPAS_BALANCE_PESO=1, ver su comentario) converge
 # bien en el mismo tiempo que las pasadas 1 y 2, asi que no hace falta darle
 # mas -- se probo con las 4 etapas completas y ni 900 s alcanzaban.
-#
-# OJO: esta funcion main() (linea de comandos) NO usa warm start -- esa
-# mejora vive en api.py, pensada para la web. Sin warm start, esta pasada
-# probablemente no encuentre ninguna solucion factible. Queda documentado
-# como pendiente si se quiere que la CLI tenga el mismo balance que la web.
+# --limite en la linea de comandos pisa tambien este valor.
 LIMITE_SEGUNDOS_BALANCE = LIMITE_SEGUNDOS
+
+# Umbral (segundos) por debajo del cual la pasada 1 usa el warm start
+# heuristico de solucion_inicial.py. Medido el 22-sep-2026 (caso base, ver
+# docs/05_Estado_app_web.md): el warm start ANCLA la busqueda cerca de su
+# propio punto de partida (~60 h) -- a 180 s con warm start el gap solo baja a
+# 4,1% y el resultado final es 60,18 h, peor que los 59,67 h que el solver ya
+# lograba buscando desde cero en el mismo tiempo. Por debajo de este umbral
+# la pasada 1 sin warm start directamente NO encuentra ninguna solucion
+# factible (verificado a 30/60/90 s), asi que ahi el warm start es
+# estrictamente una mejora. Lo usan main() (linea de comandos) y api.py (web).
+UMBRAL_WARM_START_PASADA1 = 180
 
 # --- Objetivo secundario -----------------------------------------------------
 # El makespan es el objetivo primario. Pero entre todas las soluciones con el
@@ -640,6 +648,17 @@ def cargar_desde_excel(ruta_excel):
 
 
 
+def _ruta_con_respaldo(nombre):
+    """
+    Devuelve nombre (relativo al directorio de trabajo) si existe; si no, la
+    misma ruta dentro de data/ de la raiz del proyecto.
+    """
+    ruta = Path(nombre)
+    if ruta.exists():
+        return ruta
+    return _CARPETA_DATOS_PROYECTO / ruta.name
+
+
 def cargar_capacidades(ruta=None):
     """
     Lee la tabla de capacidades generada por packer_2d.py.
@@ -649,7 +668,7 @@ def cargar_capacidades(ruta=None):
     cada capa deja de estar respaldada por un calculo geometrico.
     """
     global CAPACIDAD
-    ruta = Path(ruta or ARCHIVO_CAPACIDADES)
+    ruta = Path(ruta) if ruta else _ruta_con_respaldo(ARCHIVO_CAPACIDADES)
     if not ruta.exists():
         return False
 
@@ -669,7 +688,7 @@ def cargar_capacidades_por_plan(ruta=None):
     CAPACIDAD (un valor por bodega+producto para todos los planes).
     """
     global CAPACIDAD_POR_PLAN
-    ruta = Path(ruta or ARCHIVO_CAPACIDADES_POR_PLAN)
+    ruta = Path(ruta) if ruta else _ruta_con_respaldo(ARCHIVO_CAPACIDADES_POR_PLAN)
     if not ruta.exists():
         return False
 
@@ -1075,7 +1094,45 @@ def _crear_solver(limite):
     return pulp.PULP_CBC_CMD(timeLimit=limite, msg=1)
 
 
-def resolver(prob, limite=LIMITE_SEGUNDOS, mostrar_log=False):
+def resolver_highs_con_punto_inicial(prob, solver, valores):
+    """
+    Resuelve prob con HiGHS partiendo de una solucion conocida (MIP start).
+
+    valores: dict nombre_variable -> valor, mismo formato que
+    capturar_solucion(). Tiene que ser una solucion factible del modelo
+    actual (por ejemplo, la de la pasada anterior).
+
+    POR QUE HACE FALTA: pulp.HiGHS.actualSolve() siempre reconstruye el modelo
+    desde cero y no acepta un punto inicial. Sin punto de partida, HiGHS puede
+    tardar mas de 120 s solo en encontrar la primera solucion entera factible
+    de este modelo, y en la pasada 3 no la encuentra ni en 900 s. Se reproduce
+    a mano la secuencia interna de actualSolve() (createAndConfigureSolver ->
+    buildSolverModel -> callSolver -> findSolutionValues) para inyectar la
+    solucion justo despues de que buildSolverModel asigna var.index, que es el
+    orden de columnas que espera HiGHS.
+
+    SOLO sirve con pulp.HiGHS (usa metodos internos que CBC no tiene). No
+    captura la salida: quien llama decide si redirigir stdout para leer el log.
+    """
+    import highspy
+
+    solver.createAndConfigureSolver(prob)
+    solver.buildSolverModel(prob)
+
+    sol = highspy.HighsSolution()
+    sol.value_valid = True
+    col_values = [0.0] * len(prob.variables())
+    for var in prob.variables():
+        col_values[var.index] = valores.get(var.name) or 0.0
+    sol.col_value = col_values
+    prob.solverModel.setSolution(sol)
+
+    solver.callSolver(prob)
+    status, sol_status = solver.findSolutionValues(prob)
+    prob.assignStatus(status, sol_status)
+
+
+def resolver(prob, limite=LIMITE_SEGUNDOS, mostrar_log=False, solucion_inicial=None):
     """
     Resuelve el modelo con limite de tiempo.
 
@@ -1088,23 +1145,59 @@ def resolver(prob, limite=LIMITE_SEGUNDOS, mostrar_log=False):
     "Optimal", pero la de 300 s devolvio 57,00 h y las otras dos 56,88 h. Si el
     optimo estuviera probado, el valor no podria depender del tiempo disponible.
     Por eso se lee el log de CBC directamente.
+
+    solucion_inicial: si se entrega (dict nombre_variable -> valor) y el
+    solver es HiGHS, se usa como punto de partida -- ver
+    resolver_highs_con_punto_inicial. Con CBC se ignora.
     """
     buffer = io.StringIO()
     solver = _crear_solver(limite)
     with contextlib.redirect_stdout(buffer):
-        prob.solve(solver)
+        if solucion_inicial is not None and isinstance(solver, pulp.HiGHS):
+            resolver_highs_con_punto_inicial(prob, solver, solucion_inicial)
+        else:
+            prob.solve(solver)
     log = buffer.getvalue()
 
     if mostrar_log:
         print(log)
 
-    return {
+    return diagnosticar_resolucion(prob, solver, log)
+
+
+def diagnosticar_resolucion(prob, solver, log):
+    """
+    Arma el diccionario de resultado de una resolucion: estado de PuLP, si se
+    probo el optimo, si corto por tiempo y el gap final (en %).
+
+    Con HiGHS, el estado y el gap se leen DIRECTO del objeto highspy
+    (prob.solverModel), no del log: HiGHS escribe su log desde C, por fuera
+    de sys.stdout, asi que contextlib.redirect_stdout no lo captura y el log
+    llega vacio. Hasta el 24-sep-2026 eso dejaba el gap siempre en None y
+    optimo_probado siempre en False (se buscaban ademas textos propios de
+    CBC), y la web mostraba "gap no disponible". Con CBC se sigue leyendo el
+    log, que si se captura.
+    """
+    resultado = {
         "estado_pulp": pulp.LpStatus[prob.status],
         "optimo_probado": "Result - Optimal solution found" in log,
         "corto_por_tiempo": "Stopped on time limit" in log,
         "gap": _leer_gap(log),
         "log": log,
     }
+    modelo = getattr(prob, "solverModel", None)
+    if isinstance(solver, pulp.HiGHS) and modelo is not None:
+        try:
+            import highspy
+            estado = modelo.getModelStatus()
+            gap = modelo.getInfo().mip_gap
+        except Exception:
+            return resultado
+        resultado["optimo_probado"] = estado == highspy.HighsModelStatus.kOptimal
+        resultado["corto_por_tiempo"] = estado == highspy.HighsModelStatus.kTimeLimit
+        # mip_gap es una fraccion; infinito si no hay solucion factible
+        resultado["gap"] = gap * 100 if gap is not None and gap < float("inf") else None
+    return resultado
 
 
 def _leer_gap(log):
@@ -1804,7 +1897,23 @@ def main(carpeta_datos=None, interactivo=True):
     # apuntando al valor viejo. Bug real detectado el 22-sep-2026: con
     # --limite 30 el CLI igual resolvia con 120 s (el valor del modulo al
     # cargar), sin avisar.
-    res1 = resolver(prob, limite=LIMITE_SEGUNDOS)
+    #
+    # Warm start heuristico solo por debajo de UMBRAL_WARM_START_PASADA1 (ver
+    # su comentario), igual que api.py. solucion_inicial.py verifica la
+    # solucion contra todas las restricciones de prob; si no pasa devuelve
+    # None y se resuelve sin punto de partida.
+    solucion_inicial_p1 = None
+    if LIMITE_SEGUNDOS < UMBRAL_WARM_START_PASADA1:
+        try:
+            from . import solucion_inicial as _si
+        except ImportError:
+            import solucion_inicial as _si
+        solucion_inicial_p1 = _si.construir_solucion_inicial(
+            prob, x, y, w, z, v, T_max, peso_max, peso_min, combos
+        )
+        if solucion_inicial_p1 is not None:
+            print("  Limite bajo: se parte de una solucion heuristica verificada.")
+    res1 = resolver(prob, limite=LIMITE_SEGUNDOS, solucion_inicial=solucion_inicial_p1)
     if T_max.value() is None:
         print(f"  Sin solucion. Estado PuLP: {res1['estado_pulp']}")
         return
@@ -1821,7 +1930,8 @@ def main(carpeta_datos=None, interactivo=True):
               f"(+{TOLERANCIA_IZADAS} izadas de tolerancia)")
         print(f"  Minimizando terminos secundarios (limite {LIMITE_SEGUNDOS} s)...")
         solucion_pasada1 = capturar_solucion(prob)
-        res2 = resolver(prob, limite=LIMITE_SEGUNDOS)  # ver nota de la pasada 1
+        # Warm start desde la pasada 1 (ver nota de la pasada 1 sobre limite=)
+        res2 = resolver(prob, limite=LIMITE_SEGUNDOS, solucion_inicial=solucion_pasada1)
 
         if T_max.value() is None or T_max.value() <= 0:
             # La pasada 2 no encontro solucion dentro de su limite de tiempo.
@@ -1843,10 +1953,12 @@ def main(carpeta_datos=None, interactivo=True):
             if hay_terciario:
                 print(f"\nPasada 3 de {n_pasadas}: objetivo secundario acotado a "
                       f"<= {valor_pasada2 + TOLERANCIA_PASADA3:.2f}")
-                print(f"  Minimizando desbalance de peso (limite {LIMITE_SEGUNDOS_BALANCE} s, "
-                      f"sin warm start -- ver nota de LIMITE_SEGUNDOS_BALANCE)...")
+                print(f"  Minimizando desbalance de peso (limite {LIMITE_SEGUNDOS_BALANCE} s)...")
                 solucion_pasada2 = capturar_solucion(prob)
-                res3 = resolver(prob, limite=LIMITE_SEGUNDOS_BALANCE)
+                # Sin warm start desde la pasada 2 esta pasada no encuentra
+                # ninguna solucion factible (ver resolver_highs_con_punto_inicial)
+                res3 = resolver(prob, limite=LIMITE_SEGUNDOS_BALANCE,
+                                solucion_inicial=solucion_pasada2)
 
                 if T_max.value() is None or T_max.value() <= 0:
                     print("  La pasada 3 no encontro solucion dentro del limite.")
@@ -1904,7 +2016,7 @@ def _en_notebook():
 
 def ejecutar_desde_linea_de_comandos():
     """Lee los argumentos de la terminal y llama a main()."""
-    global LIMITE_SEGUNDOS
+    global LIMITE_SEGUNDOS, LIMITE_SEGUNDOS_BALANCE
 
     parser = argparse.ArgumentParser(
         description="Modelo de asignacion del prestow de celulosa - Puerto Lirquen"
@@ -1930,6 +2042,7 @@ def ejecutar_desde_linea_de_comandos():
 
     if args.limite:
         LIMITE_SEGUNDOS = args.limite
+        LIMITE_SEGUNDOS_BALANCE = args.limite
 
     main(carpeta_datos=args.datos, interactivo=not args.caso_base)
 
@@ -1945,4 +2058,10 @@ if __name__ == "__main__":
               "    main(carpeta_datos='datos', interactivo=False)\n")
         main(carpeta_datos=None, interactivo=False)
     else:
-        ejecutar_desde_linea_de_comandos()
+        # Se corre a traves del modulo importado ("modelo_prestow"), no de
+        # esta copia "__main__": solucion_inicial.py hace "import
+        # modelo_prestow" y lee sus globales (DEMANDA, ROT, CAPACIDAD...). Si
+        # main() corriera en "__main__", los datos cargados quedarian en esta
+        # copia y el heuristico leeria los del caso base cableado, sin aviso.
+        import modelo_prestow
+        modelo_prestow.ejecutar_desde_linea_de_comandos()

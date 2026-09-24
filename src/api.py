@@ -15,7 +15,7 @@ import contextlib
 import threading
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -33,18 +33,9 @@ except ImportError:
 # encolan. El lock dura todo el tiempo del solver; es intencional.
 _lock = threading.Lock()
 
-# Umbral (segundos) por debajo del cual la pasada 1 usa el warm start
-# heurístico de solucion_inicial.py. Medido el 22-sep-2026 (caso base, ver
-# docs/05_Estado_app_web.md): el warm start ANCLA la búsqueda cerca de su
-# propio punto de partida (~60 h) — a 180 s con warm start el gap solo baja a
-# 4,1% y el resultado final es 60,18 h, peor que los 59,67 h que el solver ya
-# lograba buscando desde cero en el mismo tiempo. Por debajo de este umbral
-# la pasada 1 sin warm start directamente NO encuentra ninguna solución
-# factible (verificado a 30/60/90 s), así que ahí el warm start es
-# estrictamente una mejora — cualquier resultado es mejor que ninguno. A
-# partir del umbral se resuelve igual que antes del warm start (sin él), para
-# no tocar el comportamiento ya validado a 180 s.
-UMBRAL_WARM_START_PASADA1 = 180
+# Umbral por debajo del cual la pasada 1 usa el warm start heurístico. Vive
+# en modelo_prestow (lo usa también la CLI); ver su comentario.
+UMBRAL_WARM_START_PASADA1 = _mp.UMBRAL_WARM_START_PASADA1
 
 # Globales de modelo_prestow que cargar_datos/cargar_capacidades modifican.
 # TIEMPO_CICLO_POR_BODEGA, APROVECHAMIENTO, etc. son constantes: no se tocan.
@@ -103,6 +94,11 @@ class ResultadoCorrida:
     HUELLA/CUADRILLAS de los globales del módulo — fuera de resolver_prestow
     esos globales ya no corresponden necesariamente a esta corrida.
     """
+    gaps_por_pasada: dict[int, float | None] = field(default_factory=dict)
+    """
+    Gap final (%) de cada pasada que entregó solución: 1 = makespan,
+    2 = izadas+fragmentación, 3 = balance de peso. `gap` es el de la última.
+    """
 
 
 # =============================================================================
@@ -150,14 +146,7 @@ def _resolver_con_solver(prob, solver) -> dict:
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         prob.solve(solver)
-    log = buf.getvalue()
-    return {
-        "estado_pulp": pulp.LpStatus[prob.status],
-        "optimo_probado": "Result - Optimal solution found" in log,
-        "corto_por_tiempo": "Stopped on time limit" in log,
-        "gap": _mp._leer_gap(log),
-        "log": log,
-    }
+    return _mp.diagnosticar_resolucion(prob, solver, buf.getvalue())
 
 
 def _resolver_con_warm_start(prob, solver, solucion_inicial: dict) -> dict:
@@ -174,11 +163,8 @@ def _resolver_con_warm_start(prob, solver, solucion_inicial: dict) -> dict:
     es el tiempo, es que HiGHS tiene que redescubrir la factibilidad por su
     cuenta después de que se retira la ruptura de simetría.
 
-    Reproduce a mano la secuencia interna de pulp.HiGHS.actualSolve()
-    (createAndConfigureSolver -> buildSolverModel -> callSolver ->
-    findSolutionValues) para poder inyectar la solución justo después de que
-    buildSolverModel asigna el índice de columna de cada variable
-    (var.index), que es el orden que espera HiGHS.
+    La mecánica (inyectar la solución vía highspy) vive en
+    modelo_prestow.resolver_highs_con_punto_inicial, compartida con la CLI.
 
     SOLO sirve con pulp.HiGHS: usa métodos internos de esa clase que CBC no
     tiene. Si solver no es una instancia de pulp.HiGHS, resuelve sin warm
@@ -187,45 +173,30 @@ def _resolver_con_warm_start(prob, solver, solucion_inicial: dict) -> dict:
     if not isinstance(solver, pulp.HiGHS):
         return _resolver_con_solver(prob, solver)
 
-    import highspy
-
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        solver.createAndConfigureSolver(prob)
-        solver.buildSolverModel(prob)
+        _mp.resolver_highs_con_punto_inicial(prob, solver, solucion_inicial)
 
-        sol = highspy.HighsSolution()
-        sol.value_valid = True
-        col_values = [0.0] * len(prob.variables())
-        for v in prob.variables():
-            col_values[v.index] = solucion_inicial.get(v.name) or 0.0
-        sol.col_value = col_values
-        prob.solverModel.setSolution(sol)
-
-        solver.callSolver(prob)
-        status, sol_status = solver.findSolutionValues(prob)
-        prob.assignStatus(status, sol_status)
-
-    log = buf.getvalue()
-    return {
-        "estado_pulp": pulp.LpStatus[prob.status],
-        "optimo_probado": "Result - Optimal solution found" in log,
-        "corto_por_tiempo": "Stopped on time limit" in log,
-        "gap": _mp._leer_gap(log),
-        "log": log,
-    }
+    return _mp.diagnosticar_resolucion(prob, solver, buf.getvalue())
 
 
 def _describir_estado(res: dict) -> str:
-    if res["optimo_probado"]:
-        return "Óptimo probado"
     gap = res.get("gap")
+    if res["optimo_probado"]:
+        # HiGHS declara óptimo con gap <= 0,01% (su tolerancia por defecto):
+        # solo se dice "óptimo" sin matices cuando el gap es exactamente cero.
+        if gap is not None and gap > 0:
+            return f"Resuelto dentro de la tolerancia del solver, gap {gap:.2f}%"
+        return "Óptimo probado"
     if res.get("corto_por_tiempo"):
         return (
             f"Límite de tiempo alcanzado, gap {gap:.2f}%"
             if gap is not None
             else "Límite de tiempo alcanzado, gap desconocido"
         )
+    if res["estado_pulp"] == "Optimal":
+        # PuLP dice "Optimal" aun sin óptimo probado (CLAUDE.md sección 8)
+        return "Solución factible, sin optimalidad probada"
     return f"Estado PuLP: {res['estado_pulp']}"
 
 
@@ -369,6 +340,7 @@ def resolver_prestow(
             # 5. Pasada 2: fijar makespan y minimizar términos secundarios
             hay_secundario = _mp.preparar_pasada2(prob, z, w, v, T_max, makespan_p1)
             res_final = res1
+            gaps_por_pasada = {1: res1.get("gap")}
             t_fin = t_tras_p1
             pasada3_exitosa = False
 
@@ -390,6 +362,7 @@ def resolver_prestow(
                     res_final = res1
                 else:
                     res_final = res2
+                    gaps_por_pasada[2] = res2.get("gap")
 
                     # 5b. Pasada 3: fijar izadas+fragmentación y balancear peso
                     valor_pasada2 = pulp.value(prob.objective)
@@ -414,6 +387,7 @@ def resolver_prestow(
                             res_final = res2
                         else:
                             res_final = res3
+                            gaps_por_pasada[3] = res3.get("gap")
                             pasada3_exitosa = True
 
             # 6. Extraer el plan
@@ -495,6 +469,7 @@ def resolver_prestow(
                 verificaciones=verificaciones,
                 estado_solver=_describir_estado(res_final),
                 gap=res_final.get("gap"),
+                gaps_por_pasada=gaps_por_pasada,
                 tiempo_solver_s=round(t_fin - t_inicio, 1),
                 excel_bytes=excel_bytes,
             )
