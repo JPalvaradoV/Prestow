@@ -173,9 +173,11 @@ circular con `import streamlit`).
   `estilo.py` porque ese módulo importa `streamlit`, lo que causa errores cuando
   Plotly se usa fuera del contexto de Streamlit (tests, scripts).
 - **Gap del solver**: se muestra "Gap no disponible (limitación conocida de HiGHS +
-  Python)" cuando es None. No se inventa un valor.
+  Python)" cuando es None. No se inventa un valor. *(Superado el 24-sep-2026: el
+  gap se lee del objeto highspy y se muestra por pasada — ver sección 17.)*
 - **Estado del solver**: se muestra "Solución encontrada dentro del tiempo asignado"
-  en vez de "Estado PuLP: Optimal" que era engañoso.
+  en vez de "Estado PuLP: Optimal" que era engañoso. *(Desde el 24-sep-2026 se
+  muestra `estado_solver`, que ya nunca dice "Optimal" sin gap cero — sección 17.)*
 
 ---
 
@@ -954,3 +956,108 @@ No se creó un script reproducible para esto (a diferencia de
 dato histórico fijo, no algo que haya que re-correr cuando cambie el
 modelo — si vuelve a hacer falta, este párrafo tiene todo lo necesario para
 rehacerla en minutos.
+
+---
+
+## 17. CLI alineada con la web, gap real del solver y preparación del despliegue (24 de septiembre de 2026)
+
+Sesión para cerrar los pendientes que quedaban del reporte del 22-sep
+(`docs/reportes_sesion/2026-09-22_tarde.md`).
+
+### Pendiente #4 de CLAUDE.md cerrado: comparación A/B de la pasada 2
+
+Se hizo la comparación controlada que faltaba: una sola pasada 1 (180 s,
+sin warm start, makespan 59,4315 h, gap 3,29%), y sobre esa MISMA solución
+dos pasadas 2 de 180 s cada una, con y sin warm start:
+
+| Pasada 2 | Objetivo (izadas + fragmentación) | Gap | Makespan final |
+|---|---|---|---|
+| Con warm start desde la pasada 1 | **1944** | 3,24% | 59,6702 h |
+| Sin warm start | 1959 | 4,03% | 59,6702 h |
+
+Conclusiones: (1) con la configuración vigente, la pasada 2 SÍ resuelve sin
+warm start — encuentra su primera solución a los ~20 s —, así que el
+síntoma original ("no resuelve en 150-180 s") ya no se reproduce; (2) el
+warm start mejora el objetivo de la pasada 2 (1944 vs 1959) y el gap, sin
+cambiar el makespan. Se mantiene. Una sola corrida por variante, pero el
+modelo es determinista con esta configuración (sección 15).
+
+### Bug real: el gap de HiGHS nunca se leía
+
+HiGHS escribe su log desde C, por fuera de `sys.stdout`: el
+`contextlib.redirect_stdout` de `resolver()` y de `api.py` capturaba un
+string VACÍO. Consecuencias: `gap` siempre `None`, `optimo_probado` y
+`corto_por_tiempo` siempre `False` (además buscaban textos propios de CBC),
+y `estado_solver` terminaba en "Estado PuLP: Optimal" — que se escribía tal
+cual en la hoja "Parámetros de la corrida" del Excel de descarga, contra la
+regla de no decir "óptimo" sin gap cero. La UI lo esquivaba con "gap no
+disponible (limitación conocida)", pero no era una limitación: los gaps de
+las secciones 14-15 se habían leído a mano de la consola.
+
+Arreglo: `modelo_prestow.diagnosticar_resolucion(prob, solver, log)` lee
+estado y gap directo del objeto highspy (`prob.solverModel.getModelStatus()`,
+`getInfo().mip_gap`, que es una fracción → se guarda en %). Con CBC sigue
+leyendo el log. La usan `resolver()` (CLI) y `api.py` (web).
+`ResultadoCorrida` suma `gaps_por_pasada` ({1: …, 2: …, 3: …}); la página
+de Resultados y el Excel muestran el gap de cada pasada — el de la pasada 1
+es el del makespan; el de la pasada 3 sale alto por la cota débil (pendiente
+#7) y la página lo explica. De paso se corrigió un bug latente: la UI
+multiplicaba por 100 un gap que ya venía en %. `api._describir_estado` ya no
+dice "Óptimo" salvo con gap exactamente cero.
+
+### CLI (`modelo_prestow.py`) alineada con la web
+
+Hasta hoy la línea de comandos y la web daban resultados distintos sin
+avisar, por tres razones:
+
+1. **No cargaba la capacidad real por plan.** Busca
+   `capacidades_reales_por_plan.csv` en el directorio de trabajo, pero el
+   archivo vive solo en `data/` — con el comando documentado (desde la raíz)
+   corría con la capacidad uniforme vieja. Ahora, si no está en el
+   directorio de trabajo, se busca en `data/` (`_ruta_con_respaldo`).
+2. **Sin warm start en ninguna pasada** (la web lo tiene en las 3). Ahora la
+   CLI usa el mismo esquema: pasada 1 con el heurístico solo por debajo de
+   `UMBRAL_WARM_START_PASADA1` (constante movida a `modelo_prestow`, api la
+   reexporta), pasadas 2 y 3 desde la pasada anterior. La mecánica de
+   highspy vive en `modelo_prestow.resolver_highs_con_punto_inicial`,
+   compartida con api. Según la investigación de la sección 10, sin warm
+   start la pasada 3 no encuentra ninguna solución factible, así que la CLI
+   probablemente caía siempre a la solución de la pasada 2.
+3. **`--limite` no llegaba a la pasada 3** (`LIMITE_SEGUNDOS_BALANCE` se
+   evaluaba una vez al cargar el módulo, mismo patrón que el bug del 22-sep).
+
+Detalle técnico: al correr `python src/modelo_prestow.py`, el módulo existe
+dos veces (`__main__` y `modelo_prestow`, este último importado por
+`solucion_inicial.py`). El bloque `if __name__ == "__main__"` ahora delega
+en el módulo importado, para que el heurístico lea los datos cargados y no
+los del caso base cableado.
+
+Tests nuevos: `tests/test_resolucion.py` (5, problemas chicos — no corren el
+modelo completo) y `tests/test_packer_2d.py` (3: regenerar las capacidades
+desde el Excel de entrada da exactamente `data/capacidades.csv`; la huella
+ocupada nunca supera el piso; el mejor patrón nunca es peor que el
+uniforme). Suite completa: 39 tests, ~2 s.
+
+### Preparación del despliegue
+
+- `requirements.txt` queda solo con lo de ejecución (lo que instala
+  Streamlit Cloud); lo de desarrollo pasa a `requirements-dev.txt`.
+- `pulp<4`: el código usa `prob.constraints` como dict, que PuLP 4.0 elimina
+  (lo avisa el propio DeprecationWarning de PuLP 3.x). Sin el tope, un
+  despliegue nuevo podría instalar PuLP 4 y romperse.
+- Se revisó que la app no escriba en archivos compartidos: los datos
+  editados van a un `tempfile.mkdtemp` por sesión y las capacidades
+  recalculadas también — varios usuarios no se pisan.
+- Pasos de despliegue en el README ("Despliegue").
+
+### Verificación sobre el caso base
+
+- CLI a 180 s, corrido desde un directorio fuera del repo (prueba la ruta de
+  respaldo a `data/`): **59,67 h**, gaps 3,29% / 3,24% / 63,91% — idénticos
+  a los del log de HiGHS, lo que confirma que `mip_gap` se escala bien —,
+  desbalance entre cuadrillas 9,4%, pasada 3 resuelta. Igual a la web y a
+  CLAUDE.md sección 3: el makespan vigente no cambió.
+- CLI a 30 s: 59,97 h (antes: sin solución), igual que la web a 30 s.
+- Web (`api` a 30 s) + página de Resultados con AppTest + Excel de descarga:
+  sin excepciones, gap por pasada en pantalla y en "Parámetros de la
+  corrida", ningún "Optimal" en pantalla.
