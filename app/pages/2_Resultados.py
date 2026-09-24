@@ -510,27 +510,29 @@ with st.expander("🔧 Detalles técnicos de la corrida"):
     st.caption(
         "Para quien quiera confirmar que el plan es confiable, no solo que se ve bien."
     )
-    # Bug fix: no mostrar "Estado PuLP: Optimal" directamente
+    # estado_solver nunca dice "Optimal" a secas: ver api._describir_estado
     if resultado.plan:
-        st.markdown("**Estado:** Solución encontrada dentro del tiempo asignado")
+        st.markdown(f"**Estado:** {resultado.estado_solver}")
     else:
         st.markdown("**Estado:** No se encontró solución factible")
 
-    if resultado.gap is not None:
-        gap_pct = resultado.gap * 100
-        st.markdown(f"**Gap:** {resultado.gap:.4f} ({gap_pct:.2f}%)")
-        if resultado.gap > 0:
-            st.caption(
-                "La solución es factible pero no se verificó que sea la mejor posible "
-                "dentro del límite de tiempo configurado. Con más tiempo de cómputo "
-                "el makespan podría reducirse hasta un "
-                f"{gap_pct:.2f}% adicional."
-            )
-    else:
+    # Gaps en porcentaje, uno por pasada (ver api.ResultadoCorrida.gaps_por_pasada)
+    _NOMBRE_PASADA = {1: "makespan", 2: "izadas y fragmentación", 3: "balance de peso"}
+    gaps = getattr(resultado, "gaps_por_pasada", {}) or {}
+    if gaps:
+        st.markdown("**Gap por pasada:**")
+        for n, g in sorted(gaps.items()):
+            texto = f"{g:.2f}%" if g is not None else "no disponible"
+            st.markdown(f"- Pasada {n} ({_NOMBRE_PASADA.get(n, '')}): {texto}")
         st.caption(
-            "Gap no disponible (limitación conocida de HiGHS + Python). "
-            "Consulta la consola de Streamlit para ver el log completo del solver."
+            "El gap es qué tan lejos podría estar cada objetivo de su mejor valor posible, "
+            "según la cota que el solver alcanzó a probar en el tiempo asignado. El que "
+            "importa para el makespan es el de la pasada 1. El de la pasada 3 suele ser "
+            "alto porque su cota inferior es débil, así que no necesariamente significa "
+            "que el balance esté lejos de lo alcanzable."
         )
+    else:
+        st.caption("Gap no disponible para esta corrida.")
 
     st.markdown("**Verificaciones:**")
     st.caption(

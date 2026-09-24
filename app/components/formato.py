@@ -266,7 +266,10 @@ def generar_excel_bytes(
 
     filas_param = list((parametros or {}).items()) + [
         ("estado_solver", resultado.estado_solver),  # type: ignore[attr-defined]
-        ("gap", resultado.gap if resultado.gap is not None else "no disponible"),  # type: ignore[attr-defined]
+    ] + [
+        (f"gap_pasada_{n}_pct", round(g, 2) if g is not None else "no disponible")
+        for n, g in sorted((getattr(resultado, "gaps_por_pasada", {}) or {}).items())
+    ] + [
         ("tiempo_solver_s", resultado.tiempo_solver_s),  # type: ignore[attr-defined]
         ("makespan_h", resultado.kpis.get("makespan_h", "")),  # type: ignore[attr-defined]
     ]
