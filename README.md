@@ -8,7 +8,7 @@ Herramienta de optimización del prestow de celulosa unitizada en buques open ha
 
 El modelo MILP está implementado, corrido y validado (tres pasadas lexicográficas: makespan → izadas+fragmentación → balance de peso). Con capacidad real por plan (dato verificado del puerto donde existe), el makespan del caso base es **≈59,67 h** — ver `CLAUDE.md` sección 3 antes de citar cualquier otra cifra.
 
-La **página web (Streamlit)** está construida hasta Fase 2: configuración editable del buque/productos/viaje/rotación, ejecución del modelo, y resultados (planimetría tipo prestow, KPIs, izadas como bloques rectangulares, balance de peso). Falta probarla en navegador real y desplegarla. Detalle completo en `docs/05_Estado_app_web.md`.
+La **página web (Streamlit)** está construida hasta Fase 2: configuración editable del buque/productos/viaje/rotación, ejecución del modelo, y resultados (planimetría tipo prestow, KPIs, izadas como bloques rectangulares, balance de peso). Lista para desplegar en Streamlit Community Cloud (ver "Despliegue" más abajo). Detalle completo en `docs/05_Estado_app_web.md`.
 
 ## Estructura
 
@@ -16,7 +16,8 @@ La **página web (Streamlit)** está construida hasta Fase 2: configuración edi
 prestow-lirquen/
 ├── CLAUDE.md              # Contexto operacional para Claude Code (auto-cargado)
 ├── README.md              # Este archivo
-├── requirements.txt
+├── requirements.txt     # Dependencias de ejecución (las que instala Streamlit Cloud)
+├── requirements-dev.txt # + pytest, black, ruff, mypy
 ├── pyproject.toml
 ├── .gitignore
 │
@@ -67,7 +68,7 @@ prestow-lirquen/
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # o requirements.txt si no se van a correr tests
 
 # Correr el modelo por CLI
 python3 src/packer_2d.py --datos data/datos_entrada_kiwi_arrow.xlsx
@@ -75,7 +76,19 @@ python3 src/modelo_prestow.py --datos data/datos_entrada_kiwi_arrow.xlsx --limit
 
 # Correr la web
 streamlit run app/app.py
+
+# Tests
+python -m pytest
 ```
+
+## Despliegue (Streamlit Community Cloud)
+
+1. En https://share.streamlit.io, "Create app" → "Deploy a public app from GitHub".
+2. Repositorio `JPalvaradoV/Prestow`, rama `master`, archivo principal `app/app.py`.
+3. En "Advanced settings", elegir Python 3.12 o superior (el proyecto pide >= 3.11).
+4. Deploy. Streamlit Cloud instala `requirements.txt` (sin las dependencias de desarrollo) y toma el tema de `.streamlit/config.toml`.
+
+La app no necesita secretos ni `data/raw/` (no versionado): usa solo los archivos versionados de `data/`. Cada sesión guarda sus datos editados en un directorio temporal propio, así que varios usuarios no se pisan. Las corridas del solver sí se encolan (un solo modelo a la vez por proceso, ver `_lock` en `src/api.py`). La app se duerme tras 12 h sin uso y despierta con la primera visita.
 
 ## Cómo trabajar con Claude Code
 
@@ -97,7 +110,7 @@ Cualquier corrida del núcleo debe reproducir:
 | Toneladas totales | 59.197 |
 | Overstowage | 0 casos en 85 capas |
 | Makespan (modelo, capacidad real por plan) | ~59,67 h — **no** 58,19 h, ver `CLAUDE.md` sección 3 |
-| Makespan (plan manual, en cálculo del modelo) | 60,61 h con error 0,01 h (validado antes de capacidad real por plan, pendiente re-correr) |
+| Makespan (plan manual, en cálculo del modelo) | 60,61 h; horas por cuadrilla con error máximo 0,023 h (re-validado el 22-sep-2026) |
 
 Si un test falla en cualquiera de estas cifras, revisar el test antes que el modelo.
 
