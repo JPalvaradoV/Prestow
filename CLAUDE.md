@@ -57,7 +57,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 
 **Stack:** Streamlit para la interfaz. Todo lo que hoy corre por CLI se expone como funciones puras desde `src/`.
 
-**Despliegue previsto:** Streamlit Community Cloud (gratuito, con la app durmiendo tras 12 h de inactividad).
+**Despliegue:** Streamlit Community Cloud (gratuito, con la app durmiendo tras 12 h de inactividad). **Desplegada el 24 de septiembre de 2026 en https://prestow.streamlit.app**, desde `master` (cada push a `master` redespliega).
 
 ## 5. Módulos nuevos que hay que construir
 

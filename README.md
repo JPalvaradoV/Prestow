@@ -8,7 +8,7 @@ Herramienta de optimización del prestow de celulosa unitizada en buques open ha
 
 El modelo MILP está implementado, corrido y validado (tres pasadas lexicográficas: makespan → izadas+fragmentación → balance de peso). Con capacidad real por plan (dato verificado del puerto donde existe), el makespan del caso base es **≈59,67 h** — ver `CLAUDE.md` sección 3 antes de citar cualquier otra cifra.
 
-La **página web (Streamlit)** está construida hasta Fase 2: configuración editable del buque/productos/viaje/rotación, ejecución del modelo, y resultados (planimetría tipo prestow, KPIs, izadas como bloques rectangulares, balance de peso). Lista para desplegar en Streamlit Community Cloud (ver "Despliegue" más abajo). Detalle completo en `docs/05_Estado_app_web.md`.
+La **página web (Streamlit)** está construida hasta Fase 2: configuración editable del buque/productos/viaje/rotación, ejecución del modelo, y resultados (planimetría tipo prestow, KPIs, izadas como bloques rectangulares, balance de peso). Desplegada en Streamlit Community Cloud: **https://prestow.streamlit.app** (ver "Despliegue" más abajo). Detalle completo en `docs/05_Estado_app_web.md`.
 
 ## Estructura
 
@@ -82,6 +82,9 @@ python -m pytest
 ```
 
 ## Despliegue (Streamlit Community Cloud)
+
+App pública: https://prestow.streamlit.app (desplegada el 24-sep-2026 desde `master`; cada push a `master` la redespliega).
+
 
 1. En https://share.streamlit.io, "Create app" → "Deploy a public app from GitHub".
 2. Repositorio `JPalvaradoV/Prestow`, rama `master`, archivo principal `app/app.py`.
