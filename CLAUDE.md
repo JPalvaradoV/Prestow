@@ -57,7 +57,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 
 **Stack:** Streamlit para la interfaz. Todo lo que hoy corre por CLI se expone como funciones puras desde `src/`.
 
-**Despliegue:** Streamlit Community Cloud (gratuito, con la app durmiendo tras 12 h de inactividad). **Desplegada el 24 de septiembre de 2026 en https://prestow.streamlit.app**, desde `master` (cada push a `master` redespliega).
+**Despliegue:** Streamlit Community Cloud (gratuito, con la app durmiendo tras 12 h de inactividad). **Desplegada el 24 de septiembre de 2026 en https://prestow.streamlit.app**, desde `master` (cada push a `master` redespliega). **Validada en Cloud el mismo día**: el caso demo a 180 s reprodujo el caso base exacto (59,67 h, 1844 izadas, 9,4% de desbalance). Ojo: el límite es de reloj, así que en una máquina más lenta el resultado podría diferir mientras el gap no sea cero.
 
 ## 5. Módulos nuevos que hay que construir
 
