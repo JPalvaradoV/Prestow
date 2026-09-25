@@ -1061,3 +1061,54 @@ uniforme). Suite completa: 39 tests, ~2 s.
 - Web (`api` a 30 s) + página de Resultados con AppTest + Excel de descarga:
   sin excepciones, gap por pasada en pantalla y en "Parámetros de la
   corrida", ningún "Optimal" en pantalla.
+
+---
+
+## 18. Buque evaluado y plan de referencia ingresados por el usuario (24-sep-2026)
+
+Pedido del dueño del proyecto: que la web pregunte el nombre del buque y los
+KPIs clave del plan de referencia, en vez de comparar siempre contra el caso
+base del Kiwi Arrow, para que la comparación sea real.
+
+**Antes:** Resultados comparaba contra `makespan_manual_h = 60,61` (solo en
+el caso demo; en un caso editado no había comparación) y las tarjetas de
+desbalance y fragmentación decían "Referencia: 6,9%" y "Referencia: 14"
+**fijo en el código, para cualquier buque**. El Excel del modelo decía
+"buque Kiwi Arrow" siempre. Al guardar un caso editado, el nombre pasaba a
+"Kiwi Arrow (editado)".
+
+**Ahora:**
+- `app/components/referencia.py` (nuevo, sin Streamlit): define los 4 KPIs
+  clave (makespan, desbalance entre cuadrillas, fragmentación, izadas),
+  `comparar()` y `REFERENCIA_KIWI_ARROW` (60,61 h / 6,9% / 14; izadas del
+  plan manual sin dato documentado → `None`, no se inventa).
+- Configuración: sección "Buque evaluado y plan de referencia" arriba de las
+  pestañas — nombre del buque (obligatorio) y los 4 KPIs (opcionales). Se
+  guardan directo en `metadata["buque"]` y `metadata["referencia"]`, sin
+  pasar por "Guardar", y se conservan al guardar las tablas. El caso demo
+  viene precargado con la referencia del Kiwi Arrow.
+- Ejecutar: muestra la referencia vigente (o avisa que no hay) con un botón
+  a Configuración; el mensaje final dice "más rápido" o "más lento" según el
+  signo (antes siempre "más rápido").
+- Resultados: título con el nombre del buque; cada tarjeta dice su
+  referencia y la diferencia (o "Sin dato de referencia"); tabla nueva
+  "Comparación con el plan de referencia" con veredicto por KPI.
+- Excel: hoja nueva "Comparación con referencia"; el encabezado de "Plan de
+  estiba" usa el nombre ingresado (`exportar_excel(nombre_buque=...)`, cuyo
+  valor por defecto sigue siendo "Kiwi Arrow" para el CLI).
+- Un 0 en makespan, fragmentación o izadas se trata como "sin dato" (es
+  imposible y dividía por cero en Resultados — lo encontró la prueba con
+  AppTest); en desbalance 0% es válido.
+
+El desbalance de referencia se compara con la misma fórmula que el modelo:
+(máx − mín) / promedio de horas por cuadrilla. Para el plan manual del Kiwi
+Arrow: (60,61 − 56,62) / 58,25 = 6,85% ≈ 6,9%.
+
+Verificado con AppTest de punta a punta (Configuración → Ejecutar →
+Resultados + Excel, corrida real a 30 s), con referencia parcial y con la
+del Kiwi Arrow: sin excepciones. Tests: `tests/test_referencia.py` (6).
+
+**Observación que dejó a la vista la comparación:** a 30 s por pasada la
+fragmentación del modelo sale 32, contra 14 del plan manual (a 180 s es
+10). Con límites bajos la pasada 2 (gap 14%) no alcanza a ordenar la carga
+por destino: el tiempo recomendado sigue siendo 180 s por pasada.

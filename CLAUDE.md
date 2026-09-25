@@ -50,7 +50,7 @@ Con datos reales, HiGHS, 180 s por pasada, rotación con Ulsan como último dest
 | Rotación | Puertos de destino y orden de descarga |
 | Ejecutar | Botón de correr modelo con parámetros (solver, tiempo límite, tolerancia) |
 | Resultados: Planimetría | Vista visual por bodega y plan, tipo prestow |
-| Resultados: KPIs | Los 5 KPIs con comparación al plan manual |
+| Resultados: KPIs | Los KPIs con comparación contra el **plan de referencia que ingresa el usuario** en Configuración (nombre del buque + makespan, desbalance, fragmentación, izadas; opcionales). El caso demo trae precargado el plan manual del Kiwi Arrow. Ver `docs/05` sección 18 |
 | Resultados: Izadas y secuencia | Número de izadas por capa + orden de carga dentro de cada capa |
 | Resultados: Balance de peso | Peso y densidad por bodega, **informativo (no es restricción del modelo)** |
 | Descarga | Enlaces al `plan_estiba.xlsx`, KPIs en CSV, y reporte de parámetros de la corrida |
