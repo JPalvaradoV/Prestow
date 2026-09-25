@@ -317,7 +317,7 @@ El CLI y la web dan exactamente los mismos resultados (verificado el 24 y 25 de 
 |---|---|---|
 | **Inicio** | Lee cómo funciona; carga el caso demo o va a configurar | Explicación en 4 pasos, botón "correr caso demo" |
 | **Configuración** | Escribe el **nombre del buque** y los **KPIs del plan de referencia** (makespan, desbalance, fragmentación, izadas; opcionales). Edita en tablas: Buque (bodegas, medidas, cuadrillas), Productos (huella, peso; agregar un producto recalcula el packer automáticamente), Viaje (unidades por producto y destino), Rotación (orden de descarga) | Validación de coherencia al guardar |
-| **Ejecutar** | Elige el solver (HiGHS recomendado) y el límite por pasada (30-360 s; **recomendado 180**); presiona "Calcular" | Resumen del caso y de la referencia; avance en vivo (pasada actual, tiempo, desbalance de peso bajando) |
+| **Ejecutar** | Elige el solver (HiGHS recomendado) y el límite por pasada (30-360 s; viene en 180; 180 s para el caso demo (Kiwi Arrow); **menos de 180 s, por ejemplo 170 s, para cualquier otro caso** (sección 18.1)); presiona "Calcular" | Resumen del caso y de la referencia; avance en vivo (pasada actual, tiempo, desbalance de peso bajando) |
 | **Resultados** | Revisa y descarga | Indicadores clave con comparación contra la referencia; tabla de comparación KPI por KPI; vista lateral del buque, capas por bodega, mapa destino × bodega, horas por cuadrilla; planimetría de cualquier capa con sus izadas numeradas y la secuencia de carga; balance de peso y densidad por bodega; plan completo; detalles técnicos (estado, gap por pasada, verificaciones) |
 
 ### Salida descargable
@@ -353,13 +353,13 @@ Los datos se ingresan **editando tablas en la página Configuración**, partiend
 | Rotación | destino | texto | Sin repetidos |
 | Rotación | orden_descarga | entero | 1 = se descarga primero; sin repetidos |
 
-Además, antes de resolver, el modelo rechaza con un mensaje claro una carga que no cabe en el buque (ver la instancia P7 de la sección 18). Parámetros de ejecución: solver (HiGHS recomendado; CBC de respaldo) y límite de tiempo por pasada (30-360 s; **recomendado 180 s**). Con límites bajos el plan es válido, pero la fragmentación empeora mucho (sección 10).
+Además, antes de resolver, el modelo rechaza con un mensaje claro una carga que no cabe en el buque (ver la instancia P7 de la sección 18). Parámetros de ejecución: solver (HiGHS recomendado; CBC de respaldo) y límite de tiempo por pasada (30-360 s; viene en 180 s; 180 s para el caso demo (Kiwi Arrow); **menos de 180 s, por ejemplo 170 s, para cualquier otro caso** (sección 18.1)). Con límites bajos el plan es válido, pero la fragmentación empeora mucho (sección 10).
 
 **Cómo declararlo en los informes** (la app se da por terminada):
 
 - Entrada: "los datos se editan en pantalla a partir del caso demo". La carga de un archivo propio queda como trabajo futuro.
 - Salida: un único Excel con 8 hojas (no hay descargas separadas en CSV).
-- Uso: el límite de 180 s por pasada es la recomendación. La web no advierte cuando se elige un límite menor: decirlo en el manual.
+- Uso: 180 s por pasada para el caso demo; menos de 180 s (por ejemplo 170 s) para cualquier otro caso, porque desde 180 s el sistema puede terminar sin solución (sección 18.1). Con límites muy bajos (30 s) el plan es válido pero la fragmentación empeora mucho (sección 10). La web no advierte ninguna de las dos cosas: decirlo en el manual.
 
 ---
 
@@ -471,7 +471,7 @@ Detalle diario en `docs/reportes_sesion/` y técnico en `docs/05_Estado_app_web.
 | 4 · Modelo y método (6-10) | Sección 5 (prosa, tabla de restricciones), sección 6 (método), diagrama del método en la sección 7. Pseudocódigo: pasadas, warm start y búsqueda por vecindarios | **Se puede escribir, salvo la 8** (citas APA verificadas) |
 | 5 · Arquitectura (11) | Sección 7: módulos, flujo, versiones, despliegue | **Se puede escribir** |
 | 6 · Datos de entrada (12-14) | Sección 3 (fuentes) y tabla de campos de la sección 8. Archivo de muestra: `datos_entrada_kiwi_arrow.xlsx` | **Se puede escribir.** El flujo real es editar en pantalla (sección 8) |
-| 7 · Manual de usuario (15-20) | Sección 8. **15 (acceso) y 17 (ejemplo paso a paso) ya no están bloqueadas**: la app está desplegada, hay que tomar las capturas. 16: parámetros (solver, límite 30-360 s, recomendado 180) con las tablas de sensibilidad de las secciones 10 y 18. 19: limitaciones y tamaño máximo recomendado (sección 18). 18: las 8 hojas del Excel. 20: uso interno, sin autenticación, no cargar datos sensibles | **Casi todo se puede escribir**; faltan las capturas |
+| 7 · Manual de usuario (15-20) | Sección 8. **15 (acceso) y 17 (ejemplo paso a paso) ya no están bloqueadas**: la app está desplegada, hay que tomar las capturas. 16: parámetros (solver; límite 30-360 s: 180 s para el caso demo, 170 s para otros casos) con las tablas de sensibilidad de las secciones 10 y 18. 19: limitaciones y tamaño máximo recomendado (sección 18). 18: las 8 hojas del Excel. 20: uso interno, sin autenticación, no cargar datos sensibles | **Casi todo se puede escribir**; faltan las capturas |
 | 8 · Validación y testeo (21-23) | 21: tabla de instancias de la sección 18 (ID, pregunta, tamaño, resultado, no-overstowage). 22: sección 10. 23: sección 9 | **Se puede escribir** |
 | 9 · Anexos (24-26) | Código comentado; glosario (sección 17); modelo formal (PDF + sección 5); 26: instancias de `data/instancias/` con sus resultados (sección 18) | **Se puede escribir** |
 | 10 · Cierre (27-28) | Límites de extensión por sección; revisión cruzada | Al final |
@@ -512,7 +512,7 @@ Frases que sí se sostienen:
 | Packer separado y precalculado | Capacidad tabulada fija | La geometría no cambia entre viajes; da una palanca real (los patrones de 4 bloques) |
 | Capacidad real por plan donde hay dato | Solo geometría | Las plantillas mostraron caídas reales de 3-13%; sin inventar donde el dato es dudoso |
 | Balance de peso como pasada 3 (reabierto) | No restringir peso | Pedido del dueño del proyecto: la web genera planes para quien no tiene referencia |
-| Warm start solo < 180 s | Siempre, nunca | Medido: por debajo evita "sin solución"; por encima ancla la búsqueda y empeora |
+| Warm start solo < 180 s | Siempre, nunca | Medido en el caso base: por debajo evita "sin solución"; por encima ancla la búsqueda y empeora. Las instancias de prueba mostraron después que, sin él, 3 de 8 casos no encuentran solución a 180 s (ver errores) |
 | Pasada 3 por vecindarios | HiGHS sobre el problema completo | El problema completo nunca mejoraba el punto de partida; los vecindarios bajan el desbalance de peso 43% |
 | Streamlit + Streamlit Cloud | Otras interfaces | Gratuito, Python puro, despliegue desde GitHub |
 
@@ -530,6 +530,7 @@ Frases que sí se sostienen:
 | **El gap de HiGHS nunca se leía** | El gap salía siempre vacío; la UI decía "limitación conocida" | Leer estado y gap del objeto del solver, no del log (HiGHS escribe desde C) | Una "limitación conocida" puede ser un bug no investigado |
 | Cambiar configuración sin regenerar artefactos | Análisis sobre un Excel viejo, con conclusiones invertidas | Regenerar siempre | — |
 | Warm start que ancla | A 180 s daba 60,18 contra 59,67 h | Solo por debajo de 180 s | Una "mejora" hay que medirla también donde ya funcionaba |
+| **La regla de 180 s se validó solo con el caso base** | Las instancias de prueba: P3, P6 y R_b1_180 terminaron sin solución a 180 s; a 170 s resolvieron todas | Se recomienda 170 s para casos nuevos y se declara como limitación (la app se dio por terminada) | Un umbral ajustado sobre un solo caso puede no generalizar; las instancias de prueba sirvieron justamente para detectarlo |
 | **El CLI y la web daban resultados distintos** | El CLI no cargaba la capacidad real por plan (ruta relativa) ni usaba warm start | Ruta de respaldo a `data/` y la misma lógica en ambos | Dos puntos de entrada divergen si no comparten el código |
 | **La pasada 3 no optimizaba nada** | El resultado era idéntico al punto de partida; `peso_min = 0`; se había atribuido a una "relajación débil" | Punto de partida ajustado + búsqueda por vecindarios | Antes de culpar a la formulación, verificar si el solver se movió del punto de partida |
 | La referencia del Kiwi Arrow estaba fija en la UI | Revisión del pedido de comparar contra el plan real de cada buque | Referencia ingresada por el usuario | — |
