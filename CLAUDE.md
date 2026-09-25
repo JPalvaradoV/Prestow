@@ -188,7 +188,8 @@ La web va a envolver esto, no reemplazarlo.
 ## 14. Documentos de referencia
 
 - `docs/00_LEEME_PRIMERO_contexto.md` — contexto general del proyecto
-- `docs/Resumen_Trabajo_Realizado.md` — resumen del análisis y decisiones
+- **`docs/reportes_sesion/2026-09-25_explicacion_completa_para_informes.md`** — **explicación completa del sistema como base para los informes Técnico y Académico**, con las cifras vigentes y el registro de cifras obsoletas de los documentos anteriores (leer antes de redactar cualquier informe)
+- `docs/Resumen_Trabajo_Realizado.md` — resumen del análisis y decisiones (⚠️ cifras de resultados desactualizadas, ver el documento anterior, sección 15)
 - `docs/03_Instrucciones_afinar_modelo.md` — cambios recientes al modelo y pendientes técnicos
 - `docs/Restricciones_Modelo_Prestow_Lirquen.pdf` — formulación matemática completa
 - `docs/Guia_de_tareas_Prestow_Lirquen.pdf` — las 120 tareas del proyecto
