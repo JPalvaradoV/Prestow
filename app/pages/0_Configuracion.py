@@ -20,6 +20,11 @@ for _p in [str(_RAIZ / "src"), str(_DIR_APP)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from components.nucleo import asegurar_nucleo_actualizado  # noqa: E402
+
+# src/ al día tras un push (Streamlit Cloud no lo recarga solo; ver nucleo.py)
+asegurar_nucleo_actualizado()
+
 import pandas as pd
 import streamlit as st
 

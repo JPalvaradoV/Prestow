@@ -1112,3 +1112,30 @@ del Kiwi Arrow: sin excepciones. Tests: `tests/test_referencia.py` (6).
 fragmentación del modelo sale 32, contra 14 del plan manual (a 180 s es
 10). Con límites bajos la pasada 2 (gap 14%) no alcanza a ordenar la carga
 por destino: el tiempo recomendado sigue siendo 180 s por pasada.
+
+---
+
+## 19. Bug de despliegue: src/ no se recarga tras un push (24-sep-2026)
+
+Tras subir la sección 18, el usuario probó en Cloud y la corrida falló con
+`TypeError: resolver_prestow() got an unexpected keyword argument
+'nombre_buque'`. Causa: Streamlit Community Cloud aplica un push sin
+reiniciar el proceso, y su vigilante de archivos solo recarga módulos de la
+carpeta del script principal (`app/`) o de `PYTHONPATH`. `src/` entra por
+`sys.path.insert`, así que no se vigila: las páginas se actualizaron y
+`api.py` quedó viejo en memoria. Localmente pasa lo mismo si se edita `src/`
+con la app corriendo. Arreglo inmediato: "Reboot app".
+
+Arreglo de fondo: `app/components/nucleo.py`, `asegurar_nucleo_actualizado()`,
+llamado al inicio de cada página. Compara una firma (mtime + tamaño) de
+`src/*.py` con la guardada y, si cambió, recarga los módulos de `src/` ya
+importados, en orden de dependencias. La primera llamada del proceso recarga
+siempre (no hay forma de saber de qué versión es lo importado), así que
+también arregla un proceso que ya tenía el núcleo viejo. No recarga si hay
+una corrida en curso (`api._lock` tomado), porque recargar `api` crea un lock
+nuevo; reintenta en la próxima carga de página.
+
+Verificado reproduciendo el caso: con un `resolver_prestow` sin
+`nombre_buque` en memoria y `src/api.py` modificado, la página Ejecutar
+completa (AppTest, 30 s) recargó el núcleo y terminó sin error, 59,97 h.
+Test: `tests/test_nucleo.py`.
