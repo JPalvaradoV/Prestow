@@ -194,6 +194,7 @@ def generar_excel_bytes(
     rot: dict[str, int] | None = None,
     parametros: dict | None = None,
     balance: object | None = None,
+    referencia: dict | None = None,
 ) -> bytes:
     """
     Arma el Excel completo de descarga: parte del Excel oficial que ya genera
@@ -207,6 +208,8 @@ def generar_excel_bytes(
         falta alguno. balance: BalancePeso (src/balance_peso.py) — se omite
         la hoja si es None. parametros: dict de la corrida (solver, límite,
         fecha, etc.) — si es None solo se documenta el estado del solver.
+        referencia: KPIs del plan de referencia (components/referencia.py) —
+        si hay al menos uno, se agrega la hoja «Comparación con referencia».
     """
     import openpyxl
 
@@ -282,6 +285,31 @@ def generar_excel_bytes(
             "óptimo teórico; 0 significa óptimo probado."
         ),
     )
+
+    from .referencia import comparar, hay_referencia
+
+    if hay_referencia(referencia):
+        _VEREDICTO = {"mejor": "Mejor", "igual": "Igual", "peor": "Peor", None: "Sin dato"}
+        filas_comp = [
+            (
+                c["kpi"].etiqueta + (f" ({c['kpi'].unidad})" if c["kpi"].unidad else ""),
+                round(c["modelo"], c["kpi"].decimales) if c["modelo"] is not None else "",
+                c["referencia"] if c["referencia"] is not None else "sin dato",
+                round(c["diferencia"], c["kpi"].decimales) if c["diferencia"] is not None else "",
+                _VEREDICTO[c["veredicto"]],
+            )
+            for c in comparar(resultado, referencia)
+        ]
+        _hoja_tabla(
+            wb, "Comparación con referencia",
+            ["KPI", "Modelo", "Referencia", "Diferencia (modelo − referencia)", "Resultado"],
+            filas_comp,
+            nota=(
+                "KPIs del plan del modelo frente a los del plan de referencia "
+                "ingresados en la web (normalmente el plan manual del puerto). En "
+                "los cuatro, menos es mejor: una diferencia negativa es una mejora."
+            ),
+        )
 
     buf = io.BytesIO()
     wb.save(buf)

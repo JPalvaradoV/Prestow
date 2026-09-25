@@ -199,8 +199,17 @@ def recalcular_capacidades(carpeta: str | Path) -> Path:
     return ruta_salida
 
 
-def resumen_metadata(tablas: dict[str, pd.DataFrame], nombre_buque: str = "Buque editado") -> dict:
-    """Arma el dict de metadata que usa la web para las cards de resumen."""
+def resumen_metadata(
+    tablas: dict[str, pd.DataFrame],
+    nombre_buque: str = "Buque editado",
+    referencia: dict | None = None,
+) -> dict:
+    """
+    Arma el dict de metadata que usa la web para las cards de resumen.
+
+    referencia: KPIs del plan de referencia ingresados en Configuración (ver
+    components/referencia.py); se conservan al guardar las tablas.
+    """
     buque, productos, rotacion, viaje = (
         tablas["buque"], tablas["productos"], tablas["rotacion"], tablas["viaje"]
     )
@@ -224,6 +233,6 @@ def resumen_metadata(tablas: dict[str, pd.DataFrame], nombre_buque: str = "Buque
         "toneladas": round(toneladas),
         "destinos": destinos_ordenados,
         "productos": productos["producto"].astype(str).str.strip().tolist(),
-        "makespan_manual_h": None,
+        "referencia": dict(referencia) if referencia else {},
         "es_caso_base": False,
     }

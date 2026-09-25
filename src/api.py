@@ -213,6 +213,7 @@ def resolver_prestow(
     solver: str = "HiGHS",
     seed: int | None = None,
     progreso: Callable[[str], None] | None = None,
+    nombre_buque: str | None = None,
 ) -> ResultadoCorrida:
     """
     Corre el modelo de prestow sobre los datos indicados y retorna un
@@ -248,6 +249,9 @@ def resolver_prestow(
         avance en vivo en vez de un spinner ciego durante los minutos que
         puede tardar el solver — ver app/pages/1_Ejecutar.py, que lo llama
         desde un hilo aparte y va mostrando el último mensaje recibido.
+    nombre_buque:
+        Nombre del buque evaluado, para el encabezado del Excel. Si es None,
+        el Excel dice "sin nombre".
 
     Raises
     ------
@@ -456,7 +460,10 @@ def resolver_prestow(
             # 9. Excel con el formato del prestow — con los globales todavía
             # cargados con los datos de esta corrida (ver docstring del campo).
             buf_excel = io.BytesIO()
-            _mp.exportar_excel(filas_raw, horas, makespan_final, ruta=buf_excel)
+            _mp.exportar_excel(
+                filas_raw, horas, makespan_final, ruta=buf_excel,
+                nombre_buque=nombre_buque or "sin nombre",
+            )
             buf_excel.seek(0)
             excel_bytes = buf_excel.read()
 

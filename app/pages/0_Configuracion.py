@@ -34,6 +34,7 @@ from components.config_editable import (
 )
 from components.estilo import aplicar_estilo_global
 from components.formato import formato_unidades
+from components.referencia import KPIS_REFERENCIA, normalizar
 
 st.set_page_config(
     page_title="Configuración",
@@ -57,7 +58,8 @@ with st.sidebar:
 
 st.markdown("# 🛠️ Configuración")
 st.caption(
-    "Edita el buque, los productos, el viaje y la rotación. Al guardar, la "
+    "Indica qué buque estás evaluando y los KPIs de su plan de referencia, y "
+    "edita el buque, los productos, el viaje y la rotación. Al guardar, la "
     "capacidad por bodega se recalcula automáticamente con el packer — no hace "
     "falta correrlo a mano."
 )
@@ -122,6 +124,8 @@ def _control_eliminar(nombre: str, df_actual: pd.DataFrame, etiqueta_fn) -> None
 
 
 tablas = st.session_state["tablas_editables"]
+_CLAVE_NOMBRE = "cfg_nombre_buque"
+_CLAVE_REF = "cfg_ref_"
 
 col_titulo, col_reset = st.columns([4, 1])
 with col_reset:
@@ -129,7 +133,61 @@ with col_reset:
         cargar_caso_demo()
         st.session_state.pop("tablas_editables", None)
         st.session_state.pop("editor_version", None)
+        for _k in [_CLAVE_NOMBRE] + [_CLAVE_REF + k.clave for k in KPIS_REFERENCIA]:
+            st.session_state.pop(_k, None)
         st.rerun()
+
+# ---------------------------------------------------------------------------
+# Buque evaluado y plan de referencia
+# ---------------------------------------------------------------------------
+# Se guardan directo en metadata (no hace falta "Guardar"): Resultados, Ejecutar
+# y el Excel comparan contra estos valores. Los widgets se inicializan desde
+# metadata porque Streamlit borra el estado de un widget cuando se navega a
+# otra página donde no se dibuja.
+st.markdown("### 🚢 Buque evaluado y plan de referencia")
+st.caption(
+    "Los KPIs de referencia son los del plan con que se cargó (o se cargaría) "
+    "este buque sin el modelo — normalmente el plan manual del puerto. Resultados "
+    "compara contra estos valores. Deja en blanco los que no tengas: ese KPI se "
+    "muestra sin comparación."
+)
+meta = st.session_state.setdefault("metadata", {})
+referencia_actual = dict(meta.get("referencia") or {})
+if _CLAVE_NOMBRE not in st.session_state:
+    st.session_state[_CLAVE_NOMBRE] = meta.get("buque", "")
+for _kpi in KPIS_REFERENCIA:
+    if _CLAVE_REF + _kpi.clave not in st.session_state:
+        _v = referencia_actual.get(_kpi.clave)
+        # float siempre: number_input no admite mezclar int con min_value float
+        st.session_state[_CLAVE_REF + _kpi.clave] = None if _v is None else float(_v)
+
+nombre_buque = st.text_input(
+    "Nombre del buque", key=_CLAVE_NOMBRE, placeholder="Ej.: Kiwi Arrow",
+    help="Aparece en las pantallas de resumen y en el Excel de descarga.",
+).strip()
+if not nombre_buque:
+    st.warning("Escribe el nombre del buque que estás evaluando.")
+
+cols_ref = st.columns(len(KPIS_REFERENCIA))
+referencia_nueva = {}
+for _col, _kpi in zip(cols_ref, KPIS_REFERENCIA):
+    with _col:
+        etiqueta = f"{_kpi.etiqueta} ({_kpi.unidad})" if _kpi.unidad else _kpi.etiqueta
+        valor = st.number_input(
+            etiqueta, key=_CLAVE_REF + _kpi.clave, min_value=0.0,
+            step=1.0 if _kpi.decimales == 0 else 0.1,
+            format=f"%.{_kpi.decimales}f", help=_kpi.ayuda, placeholder="Sin dato",
+        )
+        referencia_nueva[_kpi.clave] = normalizar(valor, _kpi)
+
+if nombre_buque and (nombre_buque != meta.get("buque") or referencia_nueva != referencia_actual):
+    meta["buque"] = nombre_buque
+    meta["referencia"] = referencia_nueva
+    # El Excel de descarga ya armado lleva la referencia anterior: se rehace
+    st.session_state.pop("resultado_excel_completo", None)
+    st.session_state.pop("resultado_excel_error", None)
+
+st.divider()
 
 tab_buque, tab_productos, tab_viaje, tab_rotacion = st.tabs(
     ["🚢 Buque", "📦 Productos", "🧭 Viaje", "🗺️ Rotación"]
@@ -328,8 +386,12 @@ if guardar:
         guardar_tablas_editables(tablas_nuevas, carpeta)
         ruta_cap = recalcular_capacidades(carpeta)
 
-        nombre_buque = st.session_state.get("metadata", {}).get("buque", "Buque editado")
-        meta_nueva = resumen_metadata(tablas_nuevas, nombre_buque=f"{nombre_buque} (editado)")
+        meta_actual = st.session_state.get("metadata", {})
+        meta_nueva = resumen_metadata(
+            tablas_nuevas,
+            nombre_buque=meta_actual.get("buque") or "Buque editado",
+            referencia=meta_actual.get("referencia"),
+        )
 
         st.session_state["tablas_editables"] = tablas_nuevas
         st.session_state["ruta_datos"] = carpeta

@@ -22,6 +22,7 @@ from components.formato import (
     formato_unidades,
     generar_excel_bytes,
 )
+from components.referencia import KPIS_REFERENCIA, comparar, formatear, hay_referencia
 from components.vista_buque import (
     plot_balance_peso,
     plot_capas_bodega,
@@ -77,11 +78,26 @@ if "resultado" not in st.session_state:
 
 resultado = st.session_state["resultado"]
 meta = st.session_state.get("metadata", {})
-makespan_manual = meta.get("makespan_manual_h")
-hay_referencia = makespan_manual is not None
-if hay_referencia:
-    ahorro = makespan_manual - resultado.makespan
-    ahorro_pct = (ahorro / makespan_manual) * 100
+nombre_buque = meta.get("buque") or "el buque"
+# KPIs del plan de referencia, ingresados en Configuración (components/referencia.py)
+referencia = meta.get("referencia") or {}
+comparacion = {c["kpi"].clave: c for c in comparar(resultado, referencia)}
+makespan_ref = comparacion["makespan_h"]["referencia"]  # ya normalizado (0 = sin dato)
+if makespan_ref is not None:
+    ahorro = makespan_ref - resultado.makespan
+    ahorro_pct = (ahorro / makespan_ref) * 100
+
+
+def _texto_referencia(clave: str) -> str:
+    """Línea chica bajo cada tarjeta de KPI: valor de referencia y diferencia."""
+    c = comparacion[clave]
+    if c["referencia"] is None:
+        return "Sin dato de referencia"
+    texto = f"Referencia: {formatear(c['referencia'], c['kpi'])}"
+    if c["veredicto"] == "igual":
+        return texto + " · igual"
+    dif = formatear(abs(c["diferencia"]), c["kpi"])
+    return texto + (f" · {dif} menos" if c["veredicto"] == "mejor" else f" · {dif} más")
 
 # --- Geometría (huellas de producto + piso de bodega): se usa en varias
 # secciones de abajo (Planimetría, Balance de peso, Excel de descarga) — se
@@ -111,38 +127,43 @@ if resultado.plan:
 # ---------------------------------------------------------------------------
 # Indicadores clave
 # ---------------------------------------------------------------------------
-st.markdown("### ⏱️ Indicadores clave")
+st.markdown(f"### ⏱️ Indicadores clave — {nombre_buque}")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if hay_referencia:
-        # Texto explícito en lugar de depender del signo del delta
-        delta_label = f"{ahorro:.2f} h más rápido que el plan de referencia"
+    if makespan_ref is not None:
+        # Texto explícito en lugar de depender del signo del delta; delta
+        # negativo (más horas que la referencia) se pinta en rojo
+        delta_label = (
+            f"{ahorro:.2f} h más rápido que el plan de referencia"
+            if ahorro >= 0
+            else f"-{-ahorro:.2f} h: más lento que el plan de referencia"
+        )
         st.metric(
             label="⏱️ Makespan",
             value=formato_horas(resultado.makespan),
             delta=delta_label,
-            help=f"Tiempo total de carga. Plan de referencia: {makespan_manual:.2f} h",
+            help=f"Tiempo total de carga. Plan de referencia: {makespan_ref:.2f} h",
         )
     else:
         st.metric(
             label="⏱️ Makespan",
             value=formato_horas(resultado.makespan),
-            help="Tiempo total de carga. Caso editado: sin plan de referencia para comparar.",
+            help="Tiempo total de carga. Sin makespan de referencia (se ingresa en Configuración).",
         )
 
 with col2:
-    if hay_referencia:
+    if makespan_ref is not None:
         st.metric(
             label="📉 Ahorro vs referencia",
             value=f"{ahorro:.2f} h",
             delta=f"{ahorro_pct:.1f}% del tiempo total",
-            help=f"El plan de referencia es {makespan_manual:.2f} h.",
+            help=f"El plan de referencia es {makespan_ref:.2f} h.",
         )
     else:
         st.metric(label="📉 Ahorro vs referencia", value="—",
-                   help="Sin plan de referencia para este caso editado.")
+                   help="Sin makespan de referencia (se ingresa en Configuración).")
 
 with col3:
     seg = resultado.tiempo_solver_s
@@ -184,7 +205,7 @@ with kpi_c1:
         f"Desbalance entre cuadrillas</p>"
         f"<p style='margin:4px 0 0 0; font-size:28px; font-weight:700; color:{c_desb};'>"
         f"{desbalance:.1f}%</p>"
-        f"<p style='margin:4px 0 0 0; font-size:12px; color:#94A3B8;'>Referencia: 6,9%</p>"
+        f"<p style='margin:4px 0 0 0; font-size:12px; color:#94A3B8;'>{_texto_referencia('desbalance_pct')}</p>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -197,7 +218,7 @@ with kpi_c2:
         f"Fragmentación (bodegas × destino)</p>"
         f"<p style='margin:4px 0 0 0; font-size:28px; font-weight:700; color:#0F3D5A;'>"
         f"{frag:.0f}</p>"
-        f"<p style='margin:4px 0 0 0; font-size:12px; color:#94A3B8;'>Referencia: 14</p>"
+        f"<p style='margin:4px 0 0 0; font-size:12px; color:#94A3B8;'>{_texto_referencia('fragmentacion')}</p>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -210,6 +231,7 @@ with kpi_c3:
         f"<p style='margin:0; color:{TEXTO_SECUNDARIO}; font-size:13px;'>Izadas totales</p>"
         f"<p style='margin:4px 0 0 0; font-size:28px; font-weight:700; color:#0F3D5A;'>"
         f"{formato_unidades(int(izadas))}</p>"
+        f"<p style='margin:4px 0 0 0; font-size:12px; color:#94A3B8;'>{_texto_referencia('izadas')}</p>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -222,6 +244,34 @@ with kpi_c4:
         f"{formato_unidades(int(unidades_tot))}</p>"
         f"</div>",
         unsafe_allow_html=True,
+    )
+
+st.markdown(f"#### Comparación con el plan de referencia de {nombre_buque}")
+if hay_referencia(referencia):
+    _VEREDICTO = {"mejor": "✅ Mejor", "igual": "➖ Igual", "peor": "⚠️ Peor", None: "Sin dato"}
+    st.dataframe(
+        pd.DataFrame([
+            {
+                "KPI": c["kpi"].etiqueta,
+                "Modelo": formatear(c["modelo"], c["kpi"]),
+                "Referencia": formatear(c["referencia"], c["kpi"]),
+                "Diferencia": (
+                    "—" if c["diferencia"] is None
+                    else ("+" if c["diferencia"] > 0 else "−" if c["diferencia"] < 0 else "")
+                    + formatear(abs(c["diferencia"]), c["kpi"])
+                ),
+                "Resultado": _VEREDICTO[c["veredicto"]],
+            }
+            for c in comparacion.values()
+        ]),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption("En los cuatro KPIs, menos es mejor. Los valores de referencia se editan en Configuración.")
+else:
+    st.info(
+        "No hay KPIs de referencia para este buque, así que no hay comparación. "
+        "Si tienes los del plan manual, ingrésalos en Configuración."
     )
 
 st.divider()
@@ -476,6 +526,7 @@ if "resultado_excel_completo" not in st.session_state:
             rot=rot,
             parametros=st.session_state.get("parametros_corrida"),
             balance=balance,
+            referencia=referencia,
         )
     except Exception as exc:
         st.session_state["resultado_excel_completo"] = None

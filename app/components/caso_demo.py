@@ -9,6 +9,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from .referencia import REFERENCIA_KIWI_ARROW
+
 _RAIZ = Path(__file__).parent.parent.parent  # raíz del proyecto
 
 
@@ -29,7 +31,8 @@ def cargar_caso_demo() -> None:
         "toneladas": 59_197,
         "destinos": ["TAICHUNG", "QINGDAO", "KUNSAN", "ULSAN"],
         "productos": ["N_ALDEA_EKP", "N_ALDEA_BKP", "ARAUCO_EKP", "ARAUCO_BKP", "CELCO_UKP"],
-        "makespan_manual_h": 60.61,
+        # KPIs del plan manual real, editables en Configuración
+        "referencia": dict(REFERENCIA_KIWI_ARROW),
     }
     # Limpiar resultado anterior
     for clave in ("resultado", "resultado_excel_completo", "resultado_excel_error",

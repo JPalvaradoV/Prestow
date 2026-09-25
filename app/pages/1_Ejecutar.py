@@ -18,6 +18,7 @@ import streamlit as st
 
 from components.caso_demo import cargar_caso_demo
 from components.estilo import AZUL_MARINO, TEAL, aplicar_estilo_global
+from components.referencia import KPIS_REFERENCIA, formatear, hay_referencia, normalizar
 
 st.set_page_config(
     page_title="Ejecutar",
@@ -96,9 +97,24 @@ for col, (icono, valor, label) in zip([col4, col5, col6], cards_fila2):
             unsafe_allow_html=True,
         )
 
-st.caption(
-    "Datos precargados del caso demo · Puedes ejecutar directamente o ajustar parámetros abajo."
-)
+# --- Plan de referencia (se ingresa en Configuración) ---
+referencia = meta.get("referencia") or {}
+if hay_referencia(referencia):
+    partes = [
+        f"{k.etiqueta}: **{formatear(normalizar(referencia.get(k.clave), k), k)}**"
+        for k in KPIS_REFERENCIA
+        if normalizar(referencia.get(k.clave), k) is not None
+    ]
+    st.info("📋 Plan de referencia para comparar — " + " · ".join(partes))
+else:
+    st.warning(
+        "📋 Sin plan de referencia: los resultados se van a mostrar sin comparación. "
+        "Si tienes los KPIs del plan manual de este buque, ingrésalos en Configuración."
+    )
+if st.button("🛠️ Cambiar buque o plan de referencia"):
+    st.switch_page("pages/0_Configuracion.py")
+
+st.caption("Puedes ejecutar directamente o ajustar parámetros abajo.")
 
 # --- Parámetros del solver ---
 # Los widgets siempre se evalúan; el expander solo controla la visibilidad.
@@ -206,6 +222,7 @@ if correr:
                 limite_segundos=limite,
                 solver=solver,
                 progreso=lambda m: estado_hilo.update(mensaje=m),
+                nombre_buque=meta.get("buque"),
             )
         except FileNotFoundError as exc:
             estado_hilo["error"] = f"Archivo no encontrado: {exc}"
@@ -252,6 +269,7 @@ if correr:
         "limite_segundos": limite,
         "ruta_datos": ruta_datos,
         "fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "buque": meta.get("buque", ""),
     }
     # El Excel completo (con izadas y balance de peso) se arma en Resultados,
     # la primera vez que se abre esa página — ahí ya están las huellas y la
@@ -260,18 +278,22 @@ if correr:
     for clave in ("resultado_excel_completo", "resultado_excel_error"):
         st.session_state.pop(clave, None)
 
-    makespan_manual = meta.get("makespan_manual_h")
+    makespan_ref = normalizar((meta.get("referencia") or {}).get("makespan_h"), KPIS_REFERENCIA[0])
 
-    if makespan_manual is not None:
-        ahorro = makespan_manual - resultado.makespan
+    if makespan_ref is not None:
+        diferencia = makespan_ref - resultado.makespan
+        comparacion = (
+            f"{diferencia:.2f} h más rápido que el plan de referencia"
+            if diferencia >= 0
+            else f"{-diferencia:.2f} h más lento que el plan de referencia"
+        )
         st.success(
-            f"✅ Optimización completada — Makespan: **{resultado.makespan:.2f} h** "
-            f"({ahorro:.2f} h más rápido que el plan de referencia)"
+            f"✅ Optimización completada — Makespan: **{resultado.makespan:.2f} h** ({comparacion})"
         )
     else:
         st.success(
             f"✅ Optimización completada — Makespan: **{resultado.makespan:.2f} h**. "
-            "Este es un caso editado: no hay plan de referencia para comparar."
+            "Sin makespan de referencia para comparar."
         )
     st.balloons()
 
