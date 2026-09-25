@@ -7,9 +7,39 @@ Este documento reúne en un solo lugar qué hace el programa, cómo está constr
 - **Informe Técnico:** describe la solución para quien la usa y la mantiene (planificador portuario). Sección 13.
 - **Informe Académico:** reflexiona sobre el proceso de desarrollo: decisiones, alternativas, errores y aprendizajes (lector: el profesor). Sección 14.
 
-Las secciones 1 a 12 son el contenido común: se escriben una vez y cada informe toma lo que necesita, con su tono.
+Las secciones 1 a 12 son el contenido común: se escriben una vez y cada informe toma lo que necesita, con su tono. La sección 18 trae los análisis hechos específicamente para los informes (instancias de prueba, sensibilidad a rendimientos y a tamaño).
 
 > **Antes de copiar cifras de otros documentos:** varios documentos anteriores (`00_LEEME_PRIMERO_contexto.md`, `01_Contexto_Informe_Academico.md`, `04_Prompt_Informe_Tecnico.md`, `Resumen_Trabajo_Realizado.md`) tienen cifras que ya no están vigentes (57,59 h, 58,19 h, desbalance 0,1-0,2%, fragmentación 21-22, "275 unidades sin reconciliar", "gap 0,195%"). La **sección 15** lista cada cifra obsoleta con su reemplazo. **Ante cualquier duda, manda este documento y `CLAUDE.md` sección 3.**
+
+---
+
+## 0. Instrucciones para el asistente que redacte los informes
+
+**Contexto.** La aplicación está terminada: el profesor la dio por lista. Tu trabajo es **redactar los informes**, no proponer mejoras al software. Lo que la app no hace se declara como alcance o limitación (secciones 8 y 11), no como tarea pendiente.
+
+**Archivos que deberías tener adjuntos** (si falta alguno, pídelo antes de escribir la sección que lo necesita):
+
+| Archivo | Para qué |
+|---|---|
+| Este documento | Fuente principal de contenido y cifras |
+| `docs/Guia_Informe_Tecnico_Prestow_Lirquen.pdf` | Qué pide cada subtarea del Informe Técnico, criterio de terminado y errores de redacción a evitar |
+| `docs/Guia_de_tareas_Prestow_Lirquen.pdf` | Qué pide cada subtarea de ambos informes (tareas T, A, M, W) |
+| `docs/Restricciones_Modelo_Prestow_Lirquen.pdf` | Formulación matemática formal para el anexo (completarla con la sección 5 de este documento) |
+| `data/resultados_analisis/resultados.csv` | Resultados de cada instancia de prueba (sección 18), por si se necesita una columna que no está en las tablas |
+| `planificacion/Bitacora_Semanal_Prestow_Lirquen.xlsx` | Única fuente de la sección "Proceso de desarrollo" del Académico |
+| Enunciado oficial del curso (lo tiene el equipo) | Rúbrica y puntajes definitivos |
+
+**Reglas de redacción:**
+
+1. **Cifras:** usar solo las de este documento (secciones 1, 10 y 18). Si otro documento dice otra cosa, manda este (ver la sección 15). La cifra del resumen ejecutivo, la de la comparación con el plan manual y la de la captura del manual deben ser la misma: **59,67 h contra 60,61 h**.
+2. **No inventar.** Si falta un dato, escribir `[PENDIENTE: qué falta]` en vez de estimarlo. Nunca generar referencias bibliográficas: las citas APA las verifica el equipo en la fuente original.
+3. **No decir "óptimo" ni "solución óptima"**: ninguna pasada probó optimalidad. Decir "la mejor solución encontrada dentro del límite de tiempo" o "a lo más a X% del óptimo" (gap).
+4. **No presentar la mejora de makespan (−1,6%) como el resultado principal.** El valor es "minutos en lugar de días" con calidad equivalente o mejor (sección 1). Con otra instancia la diferencia podría ser negativa.
+5. **No mezclar el objetivo del modelo** (minimizar el makespan) **con los beneficios del sistema** (velocidad, repetibilidad, escalabilidad).
+6. **Supuestos en tres partes:** qué se asume, por qué y qué pasaría si fuera falso (sección 4).
+7. **Informe Técnico:** para el planificador portuario; prosa en el cuerpo y modelo formal en anexo. Extensión máxima: Resumen ejecutivo 1 página, Problema y contexto 2, Objetivos 1, Modelo y método 4, Arquitectura 1, Datos de entrada 2, Instrucciones de uso 5, Validación y testeo 3.
+8. **Informe Académico:** para el profesor; reflexión sobre el proceso: decisiones con sus alternativas, errores y aprendizajes (sección 14). Declarar el uso de IA generativa (sección 14).
+9. **Lo que solo aporta el equipo** (no lo redactes tú, deja el marcador): capturas de pantalla, referencias APA verificadas, contenido de la bitácora, autoevaluaciones individuales, prompts de IA si el enunciado los pide.
 
 ---
 
@@ -30,8 +60,9 @@ Las secciones 1 a 12 son el contenido común: se escriben una vez y cada informe
 13. Guía para el Informe Técnico (sección por sección)
 14. Guía para el Informe Académico (sección por sección)
 15. Registro de cifras obsoletas
-16. Trabajo pendiente para cerrar los informes
+16. Qué falta y quién lo aporta
 17. Glosario
+18. Análisis para los informes: instancias de prueba, rendimientos y tamaño
 
 ---
 
@@ -304,11 +335,31 @@ El CLI y la web dan exactamente los mismos resultados (verificado el 24 y 25 de 
 | Parámetros de la corrida | Solver, límite, fecha, buque, estado, gap por pasada: para reproducir el resultado |
 | Comparación con referencia | Modelo contra plan de referencia, KPI por KPI (si se ingresó referencia) |
 
-### Diferencias con lo que dicen las guías
+### Datos de entrada (para el manual: tabla de campos)
 
-- La guía del Informe Técnico dice que el usuario **descarga una plantilla Excel, la edita y la sube**. **La web no tiene carga de archivos**: se parte del caso demo y se edita en pantalla. O se agrega la carga de archivos, o se reescribe esa parte del manual. Decidirlo.
-- CLAUDE.md (sección 4) menciona "KPIs en CSV" como descarga aparte. Hoy todo va en el Excel único. La página de Inicio también habla de "archivos" en plural. Ajustar el texto o la función.
-- El límite recomendado es **180 s por pasada**. Con 30 s el plan es válido pero la fragmentación queda en 31 (contra 14 del plan manual). Hoy la web no lo advierte.
+Los datos se ingresan **editando tablas en la página Configuración**, partiendo del caso demo. La web no tiene carga de archivos: el Excel `datos_entrada_kiwi_arrow.xlsx` (hojas Instrucciones, Viaje, Rotación, Buque, Productos) es el formato de la línea de comandos y el que se adjunta como archivo de muestra. Hay dos naturalezas de datos: **configuración del buque** (Buque, Productos; cambia solo si cambia el buque) y **datos del viaje** (Viaje, Rotación; cambian en cada corrida).
+
+| Tabla | Campo | Tipo / unidad | Regla que valida la web al guardar |
+|---|---|---|---|
+| Buque | bodega | entero | Obligatorio, sin repetidos |
+| Buque | largo_m, ancho_m | decimal, m | Mayor que 0 |
+| Buque | planes | entero | Mayor que 0 (todas las bodegas usan el mayor) |
+| Buque | cuadrilla | entero | Qué cuadrilla atiende la bodega |
+| Productos | producto | texto | Obligatorio, sin repetidos |
+| Productos | huella_largo_m, huella_ancho_m | decimal, m | Mayor que 0 (cambiarlas recalcula la capacidad automáticamente) |
+| Productos | peso_t | decimal, t | Peso por unidad |
+| Viaje | producto, destino | texto | Deben existir en Productos y Rotación (se eligen de una lista) |
+| Viaje | unidades | entero | No negativo |
+| Rotación | destino | texto | Sin repetidos |
+| Rotación | orden_descarga | entero | 1 = se descarga primero; sin repetidos |
+
+Además, antes de resolver, el modelo rechaza con un mensaje claro una carga que no cabe en el buque (ver la instancia P7 de la sección 18). Parámetros de ejecución: solver (HiGHS recomendado; CBC de respaldo) y límite de tiempo por pasada (30-360 s; **recomendado 180 s**). Con límites bajos el plan es válido, pero la fragmentación empeora mucho (sección 10).
+
+**Cómo declararlo en los informes** (la app se da por terminada):
+
+- Entrada: "los datos se editan en pantalla a partir del caso demo". La carga de un archivo propio queda como trabajo futuro.
+- Salida: un único Excel con 8 hojas (no hay descargas separadas en CSV).
+- Uso: el límite de 180 s por pasada es la recomendación. La web no advierte cuando se elige un límite menor: decirlo en el manual.
 
 ---
 
@@ -321,11 +372,11 @@ El CLI y la web dan exactamente los mismos resultados (verificado el 24 y 25 de 
 | **4 verificaciones automáticas** sobre cada plan generado | No-overstowage, cobertura exacta, contigüidad, capacidad | Todas OK en el caso base (180 s y 30 s) |
 | **Verificación contra todas las restricciones** | Que los puntos de partida y las soluciones de la búsqueda por vecindarios sean factibles | 0 violaciones |
 | **Estabilidad (5 semillas, 180 s)** | Que el resultado no sea ruido | Makespan y unidades por bodega idénticos en las 5 (medido el 22-sep, antes de la búsqueda por vecindarios; dos corridas posteriores de 180 s dieron también resultados idénticos) |
-| **47 tests automáticos** (`pytest`, ~2 s) | Packer, capacidad por plan, solución inicial, layout, secuencia de izadas, balance de peso, lectura del gap, comparación con referencia, recarga del núcleo | 47/47 |
+| **52 tests automáticos** (`pytest`, ~2 s) | Packer, capacidad por plan, solución inicial, layout, secuencia de izadas, balance de peso, lectura del gap, comparación con referencia, recarga del núcleo, generador de instancias | 52/52 |
 | **QA de la web** (Streamlit AppTest) | Configuración → Ejecutar → Resultados → Excel, sin excepciones | Sin excepciones; 32 combinaciones de selectores probadas |
 | **Prueba en la nube** | Que la app desplegada reproduzca el caso base | El dueño del proyecto obtuvo 59 h 40 min (= 59,67 h), 1844 izadas y 9,4% de desbalance antes de la búsqueda por vecindarios. **Falta repetirla con la versión actual a 180 s** (esperado: 59,67 h, 5,8%, fragmentación 11) |
 
-**Falta para el Informe Técnico (subtarea 21):** instancias de prueba generadas. El generador de instancias sintéticas **no está construido**.
+**Instancias de prueba, sensibilidad a rendimientos y a tamaño:** ver la sección 18 (generadas con `src/generador_instancias.py`, corridas con `src/analisis_informes.py`).
 
 ---
 
@@ -357,7 +408,7 @@ Nota de precisión: el makespan informado (59,67 h) es la cota que viene de la p
 | 2 · Izadas + fragmentación | 1944 → 1946 en la pasada 3 (dentro del margen de +2) | 3,24% |
 | 3 · Balance de peso | 6.294 → 3.604 t (cota 3.272 t) | 9,19% |
 
-**Ninguna pasada prueba optimalidad.** Frase para el informe: "la solución reportada es la mejor encontrada en 180 s por pasada; en makespan está a lo más a 3,29% del óptimo".
+**Ninguna pasada prueba optimalidad.** Frase para el informe: "la solución reportada es la mejor encontrada en 180 s por pasada; en makespan está a lo más a 3,29% del óptimo". Con las instancias de la sección 18 se acota mejor: el óptimo del caso base está entre 57,49 y 58,24 h.
 
 ### Por qué el makespan cambió entre versiones (para el Informe Académico)
 
@@ -370,7 +421,7 @@ Nota de precisión: el makespan informado (59,67 h) es la cota que viene de la p
 | 30 s | 59,97 h | 31 | 1,4% | 3.519 t |
 | 180 s | 59,67 h | 11 | 5,8% | 3.604 t |
 
-Con poco tiempo, la pasada 2 (gap 14% a 30 s) no alcanza a agrupar la carga por destino. **180 s es el valor recomendado.**
+Con poco tiempo, la pasada 2 (gap 14% a 30 s) no alcanza a agrupar la carga por destino. A 170 s (con punto de partida) el caso base da 60,18 h, fragmentación 11 y desbalance 6,6%. **Para el caso base, 180 s; para instancias nuevas, menos de 180 s (por ejemplo 170 s)**, porque a 180 s o más el sistema puede no encontrar solución (sección 18.1).
 
 ### Análisis de sensibilidad Kunsan/Ulsan (histórico)
 
@@ -380,15 +431,16 @@ Se midió cuando el orden estaba en duda: empatados 57,59 h, Kunsan antes 57,86 
 
 ## 11. Limitaciones
 
-1. **Sin optimalidad probada** en ninguna pasada (gaps de 3,29%, 3,24% y 9,19%).
+1. **Sin optimalidad probada** en ninguna pasada (gaps de 3,29%, 3,24% y 9,19%). El óptimo del caso base está entre 57,49 y 58,24 h (sección 18.5).
+   - **A 180 s o más por pasada el sistema puede terminar sin solución** en instancias distintas del caso base (3 de 8, sección 18.1), y el mensaje de error recomienda subir el límite cuando lo que sirve es bajarlo de 180 s.
 2. **Dependencia del límite de tiempo:** el límite es de reloj, así que en una máquina más lenta el resultado puede diferir mientras el gap no sea cero. Con límites bajos la fragmentación empeora mucho.
-3. **Supuestos 1-3 sin confirmar** con el puerto (tonelaje por bodega, rendimientos, pares de cuadrillas).
+3. **Supuestos 1-3 sin confirmar** con el puerto (tonelaje por bodega, rendimientos, pares de cuadrillas). El de rendimientos es el que más pesa: ±10% de rendimiento mueve el makespan ∓10% (sección 18.3).
 4. **Capas mixtas aproximadas:** la capacidad de una capa con varios productos se aproxima por suma de fracciones (5 de 85 capas en el caso base), y la planimetría de esas capas es una aproximación visual.
 5. **Capacidad por altura parcial:** solo 72 combinaciones con dato real; el resto usa la geometría uniforme.
 6. **El balance de peso es solo al zarpar**, no puerto a puerto. Se descartó con la pasada 3 antigua; con la búsqueda por vecindarios podría funcionar, pero no se ha probado.
 7. **Fuera de alcance declarado:** no decide la rotación (la recibe); no considera estabilidad transversal, trim ni esfuerzos del casco (verificar con el loading computer); no planifica varios buques a la vez; no tiene control de acceso de usuarios.
 8. **La web no permite subir un archivo de datos**: se edita en pantalla a partir del caso demo.
-9. **Sin generador de instancias** ni pruebas sobre casos distintos del Kiwi Arrow.
+9. **Instancias sintéticas, no reales:** fuera del Kiwi Arrow, el sistema se probó con variantes generadas por perturbación del caso base (sección 18). Sin contacto con la contraparte no hay otros prestows reales con los que compararse.
 
 ---
 
@@ -418,10 +470,10 @@ Detalle diario en `docs/reportes_sesion/` y técnico en `docs/05_Estado_app_web.
 | 2 · Problema y alcance (2-5) | Secciones 2, 4 y 11 (qué NO hace). Stakeholders: planificador (velocidad), armador (horas de buque), puerto (gana si llena el sitio liberado), cuadrillas (redistribución), puertos de destino (fragmentación) | **Se puede escribir** |
 | 4 · Modelo y método (6-10) | Sección 5 (prosa, tabla de restricciones), sección 6 (método), diagrama del método en la sección 7. Pseudocódigo: pasadas, warm start y búsqueda por vecindarios | **Se puede escribir, salvo la 8** (citas APA verificadas) |
 | 5 · Arquitectura (11) | Sección 7: módulos, flujo, versiones, despliegue | **Se puede escribir** |
-| 6 · Datos de entrada (12-14) | Sección 3 (fuentes), `datos_entrada_kiwi_arrow.xlsx` (5 hojas), tabla de campos de `04_Prompt_Informe_Tecnico.md` | **Se puede escribir**, corrigiendo el flujo: se edita en pantalla, no se sube un archivo (sección 8) |
-| 7 · Manual de usuario (15-20) | Sección 8. **15 (acceso) y 17 (ejemplo paso a paso) ya no están bloqueadas**: la app está desplegada, hay que tomar las capturas. 16: parámetros (solver, límite 30-360 s, recomendado 180) con la tabla de sensibilidad de la sección 10. 18: las 8 hojas del Excel. 20: uso interno, sin autenticación, no cargar datos sensibles | **Casi todo se puede escribir**; faltan las capturas |
-| 8 · Validación y testeo (21-23) | Sección 9 y resultados de la sección 10 | **22 y 23 se pueden escribir.** La 21 (instancias de prueba) está bloqueada: falta el generador |
-| 9 · Anexos (24-26) | Código comentado; glosario (sección 17); modelo formal (PDF + sección 5) | 24 y 25 **sí**; 26 bloqueada (generador) |
+| 6 · Datos de entrada (12-14) | Sección 3 (fuentes) y tabla de campos de la sección 8. Archivo de muestra: `datos_entrada_kiwi_arrow.xlsx` | **Se puede escribir.** El flujo real es editar en pantalla (sección 8) |
+| 7 · Manual de usuario (15-20) | Sección 8. **15 (acceso) y 17 (ejemplo paso a paso) ya no están bloqueadas**: la app está desplegada, hay que tomar las capturas. 16: parámetros (solver, límite 30-360 s, recomendado 180) con las tablas de sensibilidad de las secciones 10 y 18. 19: limitaciones y tamaño máximo recomendado (sección 18). 18: las 8 hojas del Excel. 20: uso interno, sin autenticación, no cargar datos sensibles | **Casi todo se puede escribir**; faltan las capturas |
+| 8 · Validación y testeo (21-23) | 21: tabla de instancias de la sección 18 (ID, pregunta, tamaño, resultado, no-overstowage). 22: sección 10. 23: sección 9 | **Se puede escribir** |
+| 9 · Anexos (24-26) | Código comentado; glosario (sección 17); modelo formal (PDF + sección 5); 26: instancias de `data/instancias/` con sus resultados (sección 18) | **Se puede escribir** |
 | 10 · Cierre (27-28) | Límites de extensión por sección; revisión cruzada | Al final |
 
 Frases que sí se sostienen:
@@ -440,11 +492,11 @@ Frases que sí se sostienen:
 | 1 · Introducción (1-2) | Problema (archivo que crece por acumulación, hojas del Misago Arrow); particularidad del grupo (packer 2D propio, capacidad real por plan); objetivo; propuesta de valor |
 | 2 · Proceso de desarrollo (3-4) | Cronología (sección 12), bitácora (`planificacion/Bitacora_Semanal_Prestow_Lirquen.xlsx`), carta Gantt. Decisiones con su porqué (tabla de abajo) |
 | 3 · Contexto y planteamiento (5-7) | Sección 2; KPIs con fórmula; los 9 supuestos en tres partes (sección 4) |
-| 4 · Tratamiento de datos (8-12) | Sección 3 completa: hallazgos y cómo se resolvió cada uno. Subtarea 12 (generador de instancias): **no construido** |
+| 4 · Tratamiento de datos (8-12) | Sección 3 completa: hallazgos y cómo se resolvió cada uno. 11: diseño de las instancias (sección 18: método de perturbación, una pregunta por instancia). 12: anexar `src/generador_instancias.py` (y los prompts de IA, ver abajo) |
 | 5 · Modelamiento (13-16) | Sección 5. Reflexión sobre lo omitido: estabilidad transversal, reagrupación de cuadrillas, separadores y maniobra, bloqueo dentro de capas mixtas |
 | 6 · Método de solución (17-22) | Sección 6 y las tablas de decisiones y errores de abajo. Es la sección de mayor peso: aquí va la historia del warm start, la pasada 2 y la pasada 3 |
 | 7 · Validación (23-24) | Sección 9. Validación más fuerte: reproducción de las horas del puerto (0,023 h) |
-| 8 · Resultados (25-26) | Sección 10, incluida la evolución 57,59 → 58,19 → 59,67 h explicada y la sensibilidad al límite de tiempo |
+| 8 · Resultados (25-26) | Sección 10 (incluida la evolución 57,59 → 58,19 → 59,67 h) y sección 18: sensibilidad a rendimientos t/h (el análisis que la guía llama obligatorio) y al tamaño |
 | 9 · Limitaciones (27) | Sección 11 |
 | 10 · Conclusiones (28) | Individuales; usar la propuesta de valor como vara común |
 | 11 · Cierre (29) | APA 7 verificadas; revisión cruzada |
@@ -485,7 +537,7 @@ Frases que sí se sostienen:
 
 ### Uso de IA generativa (declararlo)
 
-El enunciado permite usar IA para estudiar alternativas, no para decidir. En las sesiones documentadas en `docs/reportes_sesion/` se usó un asistente de código (Claude Code) para implementar, depurar y medir. Las decisiones de alcance las tomó el dueño del proyecto: están marcadas como "a pedido explícito" en CLAUDE.md (reabrir el balance de peso, la capacidad real por plan, el plan de referencia, la búsqueda por vecindarios tras ver la investigación). Si se usó IA para otras partes (por ejemplo, un generador de instancias), el enunciado exige anexar los prompts.
+El enunciado permite usar IA para estudiar alternativas, no para decidir. En las sesiones documentadas en `docs/reportes_sesion/` se usó un asistente de código (Claude Code) para implementar, depurar y medir. Las decisiones de alcance las tomó el dueño del proyecto: están marcadas como "a pedido explícito" en CLAUDE.md (reabrir el balance de peso, la capacidad real por plan, el plan de referencia, la búsqueda por vecindarios tras ver la investigación). El generador de instancias (`src/generador_instancias.py`) también se escribió con ese asistente, a pedido del dueño del proyecto, el 25-sep-2026. El enunciado exige anexar el código del generador y los prompts usados: el pedido fue preparar las instancias de prueba y los análisis de sensibilidad que exigen los informes, sin modificar la app. El código lleva comentado el método (perturbación del caso base, una variable por instancia).
 
 ---
 
@@ -512,23 +564,24 @@ El enunciado permite usar IA para estudiar alternativas, no para decidir. En las
 
 ---
 
-## 16. Trabajo pendiente para cerrar los informes
+## 16. Qué falta y quién lo aporta
 
-**Bloqueantes:**
+**Ya resuelto para los informes** (sección 18): instancias de prueba con su pregunta, sensibilidad a rendimientos t/h y sensibilidad al tamaño.
 
-1. **Referencias APA 7 verificadas en la fuente original.** Desbloquea la subtarea 8 del Técnico (35 puntos en juego) y el cierre de ambos.
-2. **Generador de instancias sintéticas.** No existe. Desbloquea la subtarea 21 y la 26 del Técnico y la 12 del Académico. Si se construye con IA, guardar los prompts.
-3. **Capturas de la app desplegada** para el manual (subtareas 15 y 17). Hacerlo con el caso demo a 180 s, y que la cifra de la captura coincida con el resumen ejecutivo.
-4. **Bitácora semanal** llena o reconstruida desde el historial (git y `docs/reportes_sesion/`). Es la única fuente del proceso de desarrollo.
+**Solo lo puede aportar el equipo:**
 
-**Recomendables:**
+1. **Referencias APA 7 verificadas en la fuente original.** Sin ellas, la subtarea 8 del Técnico (métodos con citas) y el cierre de ambos informes quedan incompletos. El asistente no debe generarlas.
+2. **Capturas de la app desplegada** para el manual (subtareas 15 y 17). Tomarlas con el caso demo a 180 s, para que la cifra coincida con el resumen ejecutivo (59,67 h).
+3. **Bitácora semanal** llena o reconstruida (única fuente del "Proceso de desarrollo" del Académico). Material de apoyo: la cronología (sección 12), el historial de git y `docs/reportes_sesion/`.
+4. **Autoevaluaciones individuales** (Académico, sección 10).
+5. **Prompts de IA** del generador de instancias, si el enunciado los pide literalmente (ver la sección 14).
 
-5. Repetir la prueba en la nube a 180 s con la versión actual (esperado: 59,67 h, 5,8%, fragmentación 11).
-6. Decidir el flujo de entrada: agregar la carga de un Excel en la web o reescribir esa parte del manual.
-7. Si se quiere citar la comparación CBC contra HiGHS, repetirla con el modelo actual.
-8. Si el informe usa el KPI de aprovechamiento de superficie (96,3% en el plan manual), hoy la web no lo calcula para el plan del modelo.
-9. Buscar el número de izadas del plan manual (para ingresarlo como referencia).
-10. Autoevaluaciones individuales (Académico, sección 10).
+**Se declaran tal cual en los informes** (no son tareas):
+
+- La entrada se edita en pantalla; la carga de un archivo propio es trabajo futuro.
+- El KPI de aprovechamiento de superficie (96,3% en el plan manual) no se calcula para el plan del modelo: no incluirlo en la tabla comparativa, o declararlo.
+- Las izadas del plan manual no están documentadas: en la comparación, "sin dato".
+- La comparación CBC contra HiGHS (57,12 contra 56,88 h) es de una versión anterior del modelo: citarla como medición histórica.
 
 ---
 
@@ -568,3 +621,79 @@ El enunciado permite usar IA para estudiar alternativas, no para decidir. En las
 | Heurística / metaheurística | Método que busca buenas soluciones sin garantía de optimalidad |
 | NP-difícil | Clase de problemas sin algoritmo eficiente conocido para el óptimo garantizado |
 | Packer 2D | Módulo que calcula cuántas unidades caben en el piso de una capa |
+
+---
+
+## 18. Análisis para los informes: instancias de prueba, rendimientos y tamaño
+
+Hechos el 25-sep-2026 con el modelo vigente, sin modificar la app. Las instancias se generan con `src/generador_instancias.py` (perturbación del caso base: cada instancia cambia **una** cosa y responde **una** pregunta) y se corren con `src/analisis_informes.py`, que llama a la misma función que la web. Los datos de cada instancia están en `data/instancias/<id>/` (CSV + `instancia.json` con su pregunta) y todos los resultados en `data/resultados_analisis/resultados.csv`. Una corrida por instancia; HiGHS; las 4 verificaciones automáticas (no-overstowage, cobertura, contigüidad, capacidad) se aplicaron a cada plan obtenido.
+
+### 18.1 Hallazgo de método: el límite de 180 s puede dejar sin solución
+
+A **180 s o más** por pasada, la pasada 1 arranca sin punto de partida (la regla de la sección 6). En el caso base HiGHS encuentra su primera solución cerca del segundo 134, con poco margen: **en 3 de las 8 instancias que debían resolverse a 180 s (P3, P6 y R_b1_180) no encontró ninguna solución**. A **170 s** (punto de partida activo) **las 12 instancias corridas resolvieron**, todas con las 4 verificaciones OK. Costo: en el caso base, 170 s da 60,18 h en vez de 59,67 h.
+
+**Cómo usarlo en los informes:** el resultado principal del caso base sigue siendo 59,67 h (180 s). La recomendación de uso para instancias nuevas es un límite **menor a 180 s (por ejemplo 170 s)**, que siempre entregó un plan válido; a 180 s o más, el sistema puede terminar sin solución. Además, el mensaje de error de la app en ese caso dice "sube el límite", cuando lo que resuelve es bajarlo por debajo de 180 s: declararlo como limitación conocida (la app se da por terminada).
+
+### 18.2 Instancias de prueba (Técnico, subtarea 21; Académico, subtarea 11)
+
+| ID | Pregunta | Tamaño (bodegas / destinos / productos / unidades) | Límite | Resultado | Makespan | Gap makespan | ¿No-overstowage? | Línea base |
+|---|---|---|---|---|---|---|---|---|
+| P0 | ¿Reproduce el plan real y cómo se compara? | 8 / 4 / 5 / 29.332 | 180 s | Resuelta | 59,67 h | 3,29% | Sí | Plan manual 60,61 h |
+| P1 | ¿Qué pasa con un solo destino (sin riesgo de overstowage)? | 8 / 1 / 5 / 29.332 | 180 s | Resuelta | 57,52 h | 0,05% | Sí | — |
+| P2 | ¿Qué pasa con un solo producto, el de mayor huella (buque casi lleno)? | 8 / 4 / 1 / 29.332 | 180 s | Resuelta | 58,17 h | 0,10% | Sí | — |
+| P3 | ¿Funciona con bodegas vacías (3 y 6), como en viajes reales parciales? | 6 / 4 / 5 / 21.999 | 180 s | **Sin solución** en 180 s | — | — | — | — |
+| P3 | ídem | ídem | 170 s | Resuelta | 61,02 h | 14,36% | Sí | — |
+| P4 | ¿Cómo reparte con el buque a media carga? | 8 / 4 / 5 / 14.667 | 180 s | Resuelta | 27,65 h | 0,48% | Sí | — |
+| P5 | ¿Qué pasa si el 70% de la carga es del último destino? | 8 / 4 / 5 / 29.331 | 180 s | Resuelta | 58,47 h | 1,29% | Sí | — |
+| P6 | ¿Qué pasa con seis destinos? | 8 / 6 / 5 / 29.332 | 180 s | **Sin solución** en 180 s | — | — | — | — |
+| P6 | ídem | ídem | 170 s | Resuelta | 58,24 h | 0,90% | Sí | — |
+| P7 | ¿Rechaza con un mensaje claro una carga que no cabe (130%)? | 8 / 4 / 5 / 38.130 | — | **Rechazada** al validar, en 0 s: "La demanda requiere 46.352 m² pero solo hay 39.815 m² en las bodegas activas" | — | — | — | — |
+
+Otros indicadores (izadas, fragmentación, desbalance, peso) en `resultados.csv`. Lectura de cada instancia:
+
+- **P1:** sin varios destinos no hay restricciones de apilamiento entre ellos y el solver llega prácticamente al óptimo (gap 0,05%). Muestra que la no-overstowage es lo que hace difícil el problema.
+- **P2:** con un solo producto no hay capas mixtas; aun con el buque casi lleno (la huella de ARAUCO_EKP es la mayor) se resuelve con gap 0,10%.
+- **P3:** con dos cuadrillas que atienden una sola bodega (5 y 4), el desbalance entre cuadrillas sale alto (68%) por construcción (esas cuadrillas tienen la mitad de trabajo posible), y el gap del makespan es el más alto de todas (14,4%).
+- **P4:** a media carga, el makespan baja a 27,65 h, menos de la mitad del caso base.
+- **P5:** con el fondo pesado (70% al último destino) se sigue cumpliendo la no-overstowage; el makespan casi no cambia (58,47 h).
+- **P6:** seis destinos se resuelven bien a 170 s (gap 0,90%). Ver 18.5 sobre lo que esto implica para el caso base.
+- **P7:** el sistema no intenta resolver datos imposibles: los rechaza antes, con el motivo.
+
+### 18.3 Sensibilidad a los rendimientos t/h (el análisis que la guía llama obligatorio)
+
+El rendimiento de la bodega 1 (140 t/h contra 270 t/h del resto) es el supuesto sin confirmar que crea el cuello de botella. El tiempo por izada es inversamente proporcional al rendimiento (tc = tc_base × r_base / r). Todas a 170 s, comparadas con el caso base a 170 s (60,18 h):
+
+| ID | Supuesto | Tiempo por izada bodega 1 | Makespan | Diferencia con 60,18 h | Gap makespan |
+|---|---|---|---|---|---|
+| P0 (170 s) | Bodega 1 a 140 t/h (caso base) | 13,91 min | 60,18 h | — | 4,10% |
+| R_b1_180 | Bodega 1 a 180 t/h | 10,82 min | 59,51 h | −0,67 h (−1,1%) | 4,60% |
+| R_b1_220 | Bodega 1 a 220 t/h | 8,85 min | 57,89 h | −2,28 h (−3,8%) | 3,34% |
+| R_b1_270 | Bodega 1 a 270 t/h (igual que el resto) | 7,21 min | 55,99 h | −4,19 h (−7,0%) | 0,27% |
+| R_todas_menos10 | Todas las bodegas rinden 10% menos | 15,46 min | 66,24 h | +6,06 h (+10,1%) | 3,23% |
+| R_todas_mas10 | Todas las bodegas rinden 10% más | 12,65 min | 54,40 h | −5,78 h (−9,6%) | 3,52% |
+
+**Lectura:** el makespan escala casi uno a uno con el rendimiento general (±10% de rendimiento → ∓10% de makespan): **el resultado absoluto depende directamente de un supuesto sin confirmar**. El rendimiento de la bodega 1, en cambio, mueve el resultado bastante menos: aun igualándola al resto (270 t/h, casi la mitad del tiempo por izada), el makespan baja 7%. Una explicación plausible, no verificada con un experimento aparte, es que la bodega 1 lleva poca carga (2.256 de 29.332 unidades en el plan del caso base). Para la comparación con el plan manual: las horas del plan manual se calcularon con los mismos rendimientos, así que si el supuesto fuera falso cambiarían ambas cifras. Conviene presentar la comparación con el plan manual, que depende menos del supuesto, antes que la cifra absoluta.
+
+### 18.4 Sensibilidad al tamaño (Técnico, subtareas 16 y 19)
+
+Carga proporcional al número de bodegas; bodegas agregadas idénticas a las 2-8; todas a 170 s.
+
+| ID | Bodegas / destinos / unidades | Makespan | Gap pasada 1 (makespan) | Gap pasada 2 (izadas + fragmentación) | Fragmentación | Tiempo total |
+|---|---|---|---|---|---|---|
+| T4x2 | 4 / 2 / 14.667 | 54,88 h | 0,02% | 0,00% (óptimo) | 4 | 228 s |
+| T6x3 | 6 / 3 / 21.998 | 55,24 h | 0,70% | 1,38% | 7 | 399 s |
+| P0 (170 s) | 8 / 4 / 29.332 | 60,18 h | 4,10% | 3,74% | 11 | 421 s |
+| T10x5 | 10 / 5 / 36.665 | 59,73 h | 4,43% | 4,26% | 14 | 460 s |
+| T12x6 | 12 / 6 / 43.999 | 59,02 h | 4,32% | **20,47%** | **70** | 511 s |
+
+**Lectura:** el tiempo total está acotado por el límite (3 pasadas × 170 s como máximo). Lo que cambia con el tamaño es la **calidad**: hasta 4-6 bodegas el solver llega prácticamente al óptimo; en el tamaño del caso base y hasta 10 bodegas / 5 destinos el makespan queda a ~4% del óptimo; con 12 bodegas / 6 destinos el makespan sigue bien (4,3%), pero la pasada 2 no alcanza a ordenar la carga y la fragmentación se dispara (70). El gap de 100% de la pasada 3 en T4x2 y T6x3 no es un mal resultado: con bodegas idénticas la cota del solver es 0 t, y cualquier diferencia positiva da 100%.
+
+**Redacción para el manual (subtarea 19):** «Para buques de hasta 10 bodegas y 5 destinos, el sistema entrega en unos 7 minutos un plan con makespan a lo más a ~4,5% del óptimo. Para 12 bodegas y 6 destinos, el makespan mantiene esa calidad, pero la fragmentación puede quedar alta: revisar el plan antes de usarlo. En todos los casos, usar un límite menor a 180 s por pasada (por ejemplo 170 s).»
+
+### 18.5 Consecuencia para el caso base: el óptimo está entre 57,49 y 58,24 h
+
+- **Cota superior 58,24 h (P6):** todo plan de P6 es también un plan válido para el caso base (basta juntar DESTINO_5 con Qingdao y DESTINO_6 con Kunsan: se mantiene el orden de descarga y todas las demás restricciones, con el mismo makespan). Por lo tanto existe un plan del caso base de 58,24 h.
+- **Cota inferior 57,49 h (P1):** todo plan del caso base es válido para P1 (un solo destino tiene menos restricciones), así que el óptimo del caso base no puede ser menor que el de P1, que el solver acotó en 57,49 h (57,52 h con gap 0,05%).
+
+El resultado informado (59,67 h) está a lo más 2,2 h por encima del óptimo teórico, y existe un plan concreto 1,4 h mejor. Es coherente con el gap de 3,29%: con más tiempo o con otra búsqueda, el sistema podría mejorar el caso base. Para el Informe Académico, es un buen ejemplo de uso de instancias relacionadas para acotar la calidad de una solución sin probar optimalidad.
+

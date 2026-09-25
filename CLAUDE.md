@@ -189,6 +189,7 @@ La web va a envolver esto, no reemplazarlo.
 
 - `docs/00_LEEME_PRIMERO_contexto.md` — contexto general del proyecto
 - **`docs/reportes_sesion/2026-09-25_explicacion_completa_para_informes.md`** — **explicación completa del sistema como base para los informes Técnico y Académico**, con las cifras vigentes y el registro de cifras obsoletas de los documentos anteriores (leer antes de redactar cualquier informe)
+- `src/generador_instancias.py` + `src/analisis_informes.py` — instancias de prueba y análisis de sensibilidad (rendimientos t/h, tamaño) para los informes; datos en `data/instancias/`, resultados en `data/resultados_analisis/resultados.csv`, tablas en la sección 18 del documento anterior. Hallazgo: a 180 s o más la pasada 1 no usa punto de partida y 3 de 8 instancias no encontraron solución; a 170 s resolvieron las 12
 - `docs/Resumen_Trabajo_Realizado.md` — resumen del análisis y decisiones (⚠️ cifras de resultados desactualizadas, ver el documento anterior, sección 15)
 - `docs/03_Instrucciones_afinar_modelo.md` — cambios recientes al modelo y pendientes técnicos
 - `docs/Restricciones_Modelo_Prestow_Lirquen.pdf` — formulación matemática completa
