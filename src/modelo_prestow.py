@@ -1562,7 +1562,7 @@ COLOR_VACIO = "F2F2F2"
 COLOR_ENCABEZADO = "44546A"
 
 
-def exportar_excel(filas, horas, T_max_valor, ruta="plan_estiba.xlsx"):
+def exportar_excel(filas, horas, T_max_valor, ruta="plan_estiba.xlsx", nombre_buque="Kiwi Arrow"):
     """
     Escribe el plan de estiba en un Excel con el formato visual del prestow.
 
@@ -1593,7 +1593,7 @@ def exportar_excel(filas, horas, T_max_valor, ruta="plan_estiba.xlsx"):
     ws["A1"].font = Font(name=FUENTE, size=14, bold=True)
     ws["A2"] = (f"Makespan {T_max_valor:.2f} h  ·  "
                 f"{sum(f['unidades'] for f in filas):,} unidades  ·  "
-                f"buque Kiwi Arrow")
+                f"buque {nombre_buque}")
     ws["A2"].font = Font(name=FUENTE, size=10, italic=True, color="595959")
 
     FILA_ENC = 4
