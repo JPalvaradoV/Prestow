@@ -1,0 +1,14 @@
+{
+  "id": "P1",
+  "grupo": "pruebas",
+  "proposito": "¿Qué pasa con un solo destino, donde no hay riesgo de overstowage?",
+  "descripcion": "Toda la carga va a QINGDAO.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 1,
+    "productos": 5,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "T12x6",
+  "grupo": "tamano",
+  "proposito": "Tamaño muy grande: 12 bodegas, 6 destinos",
+  "descripcion": "Caso base + bodegas 9-12 (cuadrillas 5-6) + DESTINO_5 y DESTINO_6; carga al 150%.",
+  "tamano": {
+    "bodegas": 12,
+    "destinos": 6,
+    "productos": 5,
+    "unidades": 43999
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

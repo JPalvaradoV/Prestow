@@ -1,0 +1,14 @@
+{
+  "id": "T6x3",
+  "grupo": "tamano",
+  "proposito": "Tamaño medio: 6 bodegas, 3 destinos",
+  "descripcion": "Bodegas 8-3 (3 cuadrillas); KUNSAN -> ULSAN; carga al 75%.",
+  "tamano": {
+    "bodegas": 6,
+    "destinos": 3,
+    "productos": 5,
+    "unidades": 21998
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

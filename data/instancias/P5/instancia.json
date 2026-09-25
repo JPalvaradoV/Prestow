@@ -1,0 +1,16 @@
+{
+  "id": "P5",
+  "grupo": "pruebas",
+  "proposito": "¿Qué pasa si casi toda la carga es del último destino (fondo pesado)?",
+  "descripcion": "70% de las unidades a ULSAN (último), 10% a cada uno de los otros tres; misma mezcla de productos.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 29331
+  },
+  "tiempo_ciclo_min": null,
+  "notas": [
+    "Total original 29332; tras redondeo 29331"
+  ]
+}

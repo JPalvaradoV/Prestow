@@ -1,0 +1,31 @@
+bodega,producto,unidades_max,unidades_geometricas,area_piso_m2,area_ocupada_m2,aprovechamiento,patron,origen_huella
+8,N_ALDEA_EKP,403,403,501.42,497.62,0.9924,4 bloques (corte en 1.47 x 0.84 m),verificado - plantillas LH-1 (bodega 1)
+8,N_ALDEA_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-3, LH-5, LH-7"
+8,ARAUCO_EKP,394,394,501.42,494.43,0.9861,4 bloques (corte en 2.67 x 4.23 m),verificado - plantillas LH-2 a LH-8
+8,ARAUCO_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-2, LH-4, LH-7"
+8,CELCO_UKP,412,412,501.42,494.89,0.987,2 bloques vertical (20 columnas + resto rotado),"verificado - plantillas LH-2, LH-4, LH-6"
+7,N_ALDEA_EKP,403,403,501.42,497.62,0.9924,4 bloques (corte en 1.47 x 0.84 m),verificado - plantillas LH-1 (bodega 1)
+7,N_ALDEA_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-3, LH-5, LH-7"
+7,ARAUCO_EKP,394,394,501.42,494.43,0.9861,4 bloques (corte en 2.67 x 4.23 m),verificado - plantillas LH-2 a LH-8
+7,ARAUCO_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-2, LH-4, LH-7"
+7,CELCO_UKP,412,412,501.42,494.89,0.987,2 bloques vertical (20 columnas + resto rotado),"verificado - plantillas LH-2, LH-4, LH-6"
+5,N_ALDEA_EKP,403,403,501.42,497.62,0.9924,4 bloques (corte en 1.47 x 0.84 m),verificado - plantillas LH-1 (bodega 1)
+5,N_ALDEA_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-3, LH-5, LH-7"
+5,ARAUCO_EKP,394,394,501.42,494.43,0.9861,4 bloques (corte en 2.67 x 4.23 m),verificado - plantillas LH-2 a LH-8
+5,ARAUCO_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-2, LH-4, LH-7"
+5,CELCO_UKP,412,412,501.42,494.89,0.987,2 bloques vertical (20 columnas + resto rotado),"verificado - plantillas LH-2, LH-4, LH-6"
+4,N_ALDEA_EKP,403,403,501.42,497.62,0.9924,4 bloques (corte en 1.47 x 0.84 m),verificado - plantillas LH-1 (bodega 1)
+4,N_ALDEA_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-3, LH-5, LH-7"
+4,ARAUCO_EKP,394,394,501.42,494.43,0.9861,4 bloques (corte en 2.67 x 4.23 m),verificado - plantillas LH-2 a LH-8
+4,ARAUCO_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-2, LH-4, LH-7"
+4,CELCO_UKP,412,412,501.42,494.89,0.987,2 bloques vertical (20 columnas + resto rotado),"verificado - plantillas LH-2, LH-4, LH-6"
+2,N_ALDEA_EKP,403,403,501.42,497.62,0.9924,4 bloques (corte en 1.47 x 0.84 m),verificado - plantillas LH-1 (bodega 1)
+2,N_ALDEA_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-3, LH-5, LH-7"
+2,ARAUCO_EKP,394,394,501.42,494.43,0.9861,4 bloques (corte en 2.67 x 4.23 m),verificado - plantillas LH-2 a LH-8
+2,ARAUCO_BKP,435,435,501.42,496.94,0.9911,4 bloques (corte en 8.16 x 1.36 m),"verificado - plantillas LH-2, LH-4, LH-7"
+2,CELCO_UKP,412,412,501.42,494.89,0.987,2 bloques vertical (20 columnas + resto rotado),"verificado - plantillas LH-2, LH-4, LH-6"
+1,N_ALDEA_EKP,200,200,248.64,246.96,0.9932,uniforme sin rotar,verificado - plantillas LH-1 (bodega 1)
+1,N_ALDEA_BKP,216,216,248.64,246.76,0.9924,2 bloques horizontal (9 filas + resto rotado),"verificado - plantillas LH-3, LH-5, LH-7"
+1,ARAUCO_EKP,195,195,248.64,244.71,0.9842,4 bloques (corte en 2.67 x 1.41 m),verificado - plantillas LH-2 a LH-8
+1,ARAUCO_BKP,216,216,248.64,246.76,0.9924,2 bloques horizontal (9 filas + resto rotado),"verificado - plantillas LH-2, LH-4, LH-7"
+1,CELCO_UKP,206,206,248.64,247.45,0.9952,4 bloques (corte en 0.84 x 3.36 m),"verificado - plantillas LH-2, LH-4, LH-6"

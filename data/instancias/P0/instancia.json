@@ -1,0 +1,14 @@
+{
+  "id": "P0",
+  "grupo": "pruebas",
+  "proposito": "¿El sistema reproduce el plan real y cómo se compara con él? (línea base)",
+  "descripcion": "Caso base Kiwi Arrow sin cambios.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

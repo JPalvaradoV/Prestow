@@ -1,0 +1,14 @@
+{
+  "id": "P3",
+  "grupo": "pruebas",
+  "proposito": "¿Funciona con bodegas vacías, como en viajes reales parciales?",
+  "descripcion": "Bodegas 3 y 6 inactivas (así aparecen en hojas históricas del archivo del puerto); carga al 75%.",
+  "tamano": {
+    "bodegas": 6,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 21999
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

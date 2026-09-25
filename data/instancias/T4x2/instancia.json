@@ -1,0 +1,14 @@
+{
+  "id": "T4x2",
+  "grupo": "tamano",
+  "proposito": "Tamaño chico: 4 bodegas, 2 destinos",
+  "descripcion": "Bodegas 8-5 (2 cuadrillas); TAICHUNG+QINGDAO -> QINGDAO, KUNSAN+ULSAN -> ULSAN; carga al 50%.",
+  "tamano": {
+    "bodegas": 4,
+    "destinos": 2,
+    "productos": 5,
+    "unidades": 14667
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

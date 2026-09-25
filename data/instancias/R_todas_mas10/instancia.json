@@ -1,0 +1,23 @@
+{
+  "id": "R_todas_mas10",
+  "grupo": "rendimientos",
+  "proposito": "¿Cuánto cambia si todas las bodegas rinden 110% de lo supuesto?",
+  "descripcion": "Todos los rendimientos x 1.1.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": {
+    "8": 6.490909090909091,
+    "7": 6.536363636363637,
+    "6": 6.463636363636364,
+    "5": 6.536363636363637,
+    "4": 6.5,
+    "3": 6.509090909090909,
+    "2": 6.509090909090909,
+    "1": 12.645454545454546
+  },
+  "notas": []
+}

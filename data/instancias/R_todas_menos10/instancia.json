@@ -1,0 +1,23 @@
+{
+  "id": "R_todas_menos10",
+  "grupo": "rendimientos",
+  "proposito": "¿Cuánto cambia si todas las bodegas rinden 90% de lo supuesto?",
+  "descripcion": "Todos los rendimientos x 0.9.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": {
+    "8": 7.933333333333334,
+    "7": 7.98888888888889,
+    "6": 7.9,
+    "5": 7.98888888888889,
+    "4": 7.944444444444445,
+    "3": 7.955555555555556,
+    "2": 7.955555555555556,
+    "1": 15.455555555555556
+  },
+  "notas": []
+}

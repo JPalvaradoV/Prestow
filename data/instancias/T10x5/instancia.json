@@ -1,0 +1,14 @@
+{
+  "id": "T10x5",
+  "grupo": "tamano",
+  "proposito": "Tamaño grande: 10 bodegas, 5 destinos",
+  "descripcion": "Caso base + bodegas 9-10 (cuadrilla 5) + DESTINO_5 (mitad de QINGDAO); carga al 125%.",
+  "tamano": {
+    "bodegas": 10,
+    "destinos": 5,
+    "productos": 5,
+    "unidades": 36665
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

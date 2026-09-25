@@ -1,0 +1,14 @@
+{
+  "id": "P7",
+  "grupo": "pruebas",
+  "proposito": "¿El sistema rechaza con un mensaje claro una carga que no cabe?",
+  "descripcion": "Carga al 130%: excede el área del buque.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 38130
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

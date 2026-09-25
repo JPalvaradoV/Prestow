@@ -1,0 +1,14 @@
+{
+  "id": "P2",
+  "grupo": "pruebas",
+  "proposito": "¿Qué pasa con un solo producto, el de mayor huella (buque casi lleno)?",
+  "descripcion": "Toda la carga pasa a ARAUCO_EKP (0,89 x 1,41 m), mismas unidades por destino.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 1,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

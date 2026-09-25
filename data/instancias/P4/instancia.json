@@ -1,0 +1,14 @@
+{
+  "id": "P4",
+  "grupo": "pruebas",
+  "proposito": "¿Cómo reparte con el buque a media carga?",
+  "descripcion": "Carga al 50%.",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 14667
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

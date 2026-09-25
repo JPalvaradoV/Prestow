@@ -1,0 +1,6 @@
+producto,huella_largo_m,huella_ancho_m,peso_t,origen_dato
+N_ALDEA_EKP,0.84,1.47,2.02,verificado - plantillas LH-1 (bodega 1)
+N_ALDEA_BKP,0.84,1.36,2.02,"verificado - plantillas LH-3, LH-5, LH-7"
+ARAUCO_EKP,0.89,1.41,2.02,verificado - plantillas LH-2 a LH-8
+ARAUCO_BKP,0.84,1.36,2.02,"verificado - plantillas LH-2, LH-4, LH-7"
+CELCO_UKP,0.84,1.43,2.02,"verificado - plantillas LH-2, LH-4, LH-6"

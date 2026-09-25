@@ -1,0 +1,14 @@
+{
+  "id": "P6",
+  "grupo": "pruebas",
+  "proposito": "¿Qué pasa con seis destinos (más restricciones de apilamiento)?",
+  "descripcion": "Mitad de QINGDAO pasa a DESTINO_5 (después de QINGDAO) y mitad de KUNSAN a DESTINO_6 (después de KUNSAN).",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 6,
+    "productos": 5,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": null,
+  "notas": []
+}

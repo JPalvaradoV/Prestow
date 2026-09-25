@@ -1,0 +1,23 @@
+{
+  "id": "R_b1_180",
+  "grupo": "rendimientos",
+  "proposito": "¿Cuánto cambia el resultado si la bodega 1 rinde 180 t/h en vez de 140?",
+  "descripcion": "Bodega 1 a 180 t/h (tiempo de ciclo 10.82 min).",
+  "tamano": {
+    "bodegas": 8,
+    "destinos": 4,
+    "productos": 5,
+    "unidades": 29332
+  },
+  "tiempo_ciclo_min": {
+    "8": 7.14,
+    "7": 7.19,
+    "6": 7.11,
+    "5": 7.19,
+    "4": 7.15,
+    "3": 7.16,
+    "2": 7.16,
+    "1": 10.818888888888889
+  },
+  "notas": []
+}
