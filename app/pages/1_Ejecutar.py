@@ -143,8 +143,8 @@ with st.expander("⚙️ Parámetros del solver (opcional)", expanded=False):
             value=180,
             step=30,
             help="Se aplica a cada una de las tres pasadas del solver (makespan, "
-                 "izadas+fragmentación, balance de peso) — el tiempo total es el "
-                 "triple de este valor. Máximo 360 s por pasada (18 minutos en total). "
+                 "izadas+fragmentación, balance de peso) — el tiempo total es hasta el "
+                 "triple de este valor (la pasada 3 suele terminar antes). Máximo 360 s por pasada (18 minutos en total). "
                  "Con HiGHS, el solver arranca desde un punto de partida ya factible "
                  "(no óptimo) en vez de buscar una solución desde cero, así que incluso "
                  "límites bajos como 30 s devuelven un plan válido — solo que con menos "

@@ -431,7 +431,8 @@ st.divider()
 # ---------------------------------------------------------------------------
 st.markdown("## ⚖️ Balance de peso")
 st.caption(
-    "El modelo intenta balancear el peso entre bodegas al momento de zarpar "
+    "El modelo balancea el peso entre bodegas al momento de zarpar: minimiza la "
+    "diferencia en toneladas entre la bodega más y la menos cargada "
     "(tercera prioridad, después de minimizar el tiempo de carga y las "
     "izadas+fragmentación — nunca sacrifica esas dos por mejorar el balance). "
     "**Dispersión relativa** es la diferencia entre la bodega con más y con menos "
@@ -583,9 +584,9 @@ with st.expander("🔧 Detalles técnicos de la corrida"):
         st.caption(
             "El gap es qué tan lejos podría estar cada objetivo de su mejor valor posible, "
             "según la cota que el solver alcanzó a probar en el tiempo asignado. El que "
-            "importa para el makespan es el de la pasada 1. El de la pasada 3 suele ser "
-            "alto porque su cota inferior es débil, así que no necesariamente significa "
-            "que el balance esté lejos de lo alcanzable."
+            "importa para el makespan es el de la pasada 1. La pasada 3 se resuelve por "
+            "vecindarios (dos bodegas a la vez); su gap se mide contra la cota que el "
+            "solver calcula para el problema completo."
         )
     else:
         st.caption("Gap no disponible para esta corrida.")

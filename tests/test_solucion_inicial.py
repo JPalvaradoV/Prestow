@@ -106,3 +106,15 @@ def test_sin_demanda_no_rompe():
         assert si.construir_asignacion_heuristica() is None
     finally:
         mp.DEMANDA = demanda_original
+
+
+def test_ajustar_pesos_extremos_usa_el_peso_real():
+    # El punto de partida de la pasada 3 traia peso_min = 0 (docs/05 seccion 20)
+    _cargar_caso_base()
+    prob, x, y, z, w, v, T_max, combos, peso_max, peso_min = mp.construir_modelo()
+    valores = si.construir_solucion_inicial(prob, x, y, w, z, v, T_max, peso_max, peso_min, combos)
+    valores[peso_min[0].name] = 0.0
+    desbalance = mp.ajustar_pesos_extremos(valores, x, combos, peso_max, peso_min)
+    pesos = mp._pesos_restantes(valores, x, combos, peso_max)[0]
+    assert valores[peso_min[0].name] == min(pesos.values()) > 0
+    assert desbalance == max(pesos.values()) - min(pesos.values())

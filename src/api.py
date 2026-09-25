@@ -194,6 +194,8 @@ def _describir_estado(res: dict) -> str:
             if gap is not None
             else "Límite de tiempo alcanzado, gap desconocido"
         )
+    if gap is not None:
+        return f"Sin optimalidad probada, gap {gap:.2f}%"
     if res["estado_pulp"] == "Optimal":
         # PuLP dice "Optimal" aun sin óptimo probado (CLAUDE.md sección 8)
         return "Solución factible, sin optimalidad probada"
@@ -379,20 +381,21 @@ def resolver_prestow(
                         _avisar(
                             f"Pasada 3 de 3 — balance de peso (hasta {limite_segundos_balance} s)…"
                         )
-                        solver_p3 = _construir_solver(solver, limite_segundos_balance, seed)
-                        res3 = _resolver_con_warm_start(prob, solver_p3, solucion_p2)
+                        # Búsqueda por vecindarios (pares de bodegas), no el
+                        # problema completo: con el problema completo HiGHS
+                        # nunca mejoraba su punto de partida (docs/05 sección
+                        # 20). Siempre devuelve una solución: en el peor caso,
+                        # la de la pasada 2 con peso_max/peso_min ajustados.
+                        _, res3 = _mp.resolver_pasada3_por_vecindarios(
+                            prob, x, y, z, w, v, T_max, combos, peso_max, peso_min,
+                            solucion_p2, limite_segundos_balance,
+                            lambda lim: _construir_solver(solver, lim, seed),
+                            avisar=_avisar,
+                        )
                         t_fin = time.perf_counter()
-
-                        if T_max.value() is None or T_max.value() <= 0:
-                            # La pasada 3 no resolvió; conservar la de la pasada 2
-                            # (sus peso_max/peso_min no fueron minimizados: no son
-                            # un balance real, así que el KPI no se informa)
-                            _mp.restaurar_solucion(prob, solucion_p2)
-                            res_final = res2
-                        else:
-                            res_final = res3
-                            gaps_por_pasada[3] = res3.get("gap")
-                            pasada3_exitosa = True
+                        res_final = res3
+                        gaps_por_pasada[3] = res3.get("gap")
+                        pasada3_exitosa = True
 
             # 6. Extraer el plan
             _avisar("Extrayendo el plan y armando el Excel…")
