@@ -397,6 +397,15 @@ PESO_BALANCE = 1.0
 # no relativo, para que no dependa de cuanto logro la pasada 2.
 TOLERANCIA_PASADA3 = 2.0
 
+# Pasada 3 por busqueda de vecindarios (ver resolver_pasada3_por_vecindarios).
+# Tope de tiempo de cada subproblema (un par de bodegas libres, el resto fijo):
+# en el caso base cada uno resuelve a optimo en 1-3 s.
+LIMITE_SUBPROBLEMA_PASADA3 = 20
+# Segundos de HiGHS sobre la pasada 3 completa al inicio, solo para obtener la
+# cota dual (llega a ~3.270 t en menos de 10 s en el caso base) y poder
+# informar el gap. No aporta soluciones: HiGHS no mejora su punto de partida.
+SEGUNDOS_COTA_PASADA3 = 10
+
 # Fraccion minima del area que debe ocupar una capa para poder abrir la de
 # encima. Con 0 se desactiva.
 #
@@ -1246,15 +1255,17 @@ def _leer_gap(log):
 def describir_resolucion(res, etiqueta):
     """Imprime lo que realmente hizo el solver, sin confiar en el estado de PuLP."""
     if res["optimo_probado"]:
-        print(f"  {etiqueta}: optimo probado por CBC")
+        print(f"  {etiqueta}: optimo probado por el solver")
     elif res["corto_por_tiempo"]:
         gap = res["gap"]
         detalle = f", gap {gap:.2f}%" if gap is not None else ", gap desconocido"
         print(f"  {etiqueta}: ATENCION - se corto por limite de tiempo{detalle}")
         print(f"           El resultado NO es optimo probado.")
+    elif res.get("gap") is not None:
+        print(f"  {etiqueta}: sin optimalidad probada, gap {res['gap']:.2f}%")
     else:
         print(f"  {etiqueta}: estado PuLP = {res['estado_pulp']} "
-              f"(CBC no confirmo optimalidad)")
+              f"(el solver no confirmo optimalidad)")
 
 
 def capturar_solucion(prob):
@@ -1365,6 +1376,217 @@ def preparar_pasada3(prob, z, w, v, peso_max, peso_min, valor_pasada2):
         PESO_BALANCE * pulp.lpSum(peso_max[k] - peso_min[k] for k in peso_max)
     )
     return True
+
+
+def _pesos_restantes(valores, x, combos, peso_max):
+    """
+    Toneladas por bodega en cada etapa k del balance (mismo calculo que la
+    restriccion 10), a partir de un dict nombre_variable -> valor.
+    """
+    return {
+        k: {
+            h: sum(
+                (valores.get(x[(h, t, p, d)].name) or 0.0) * PESO.get(p, PESO_UNIDAD_RESPALDO)
+                for t in PLANES
+                for (p, d) in combos
+                if ROT[d] > k
+            )
+            for h in BODEGAS
+        }
+        for k in peso_max
+    }
+
+
+def ajustar_pesos_extremos(valores, x, combos, peso_max, peso_min):
+    """
+    Pone peso_max[k]/peso_min[k] en el peso real de la bodega mas y menos
+    cargada de cada etapa. Modifica `valores` y devuelve el desbalance (suma
+    de max - min).
+
+    POR QUE: la solucion de la pasada 2 no tenia estas variables en el
+    objetivo y traia valores arbitrarios (peso_min = 0 en el caso base). Usada
+    tal cual como punto de partida de la pasada 3, el "desbalance" inicial era
+    el peso de la bodega mas cargada (9.068 t en vez de los 6.294 t reales).
+    """
+    total = 0.0
+    for k, por_bodega in _pesos_restantes(valores, x, combos, peso_max).items():
+        valores[peso_max[k].name] = max(por_bodega.values())
+        valores[peso_min[k].name] = min(por_bodega.values())
+        total += valores[peso_max[k].name] - valores[peso_min[k].name]
+    return total
+
+
+def resolver_pasada3_por_vecindarios(
+    prob, x, y, z, w, v, T_max, combos, peso_max, peso_min, solucion_inicial, limite,
+    crear_solver, avisar=None,
+):
+    """
+    Resuelve la pasada 3 (balance de peso) por busqueda de vecindarios, en vez
+    de pasarle el problema completo a HiGHS.
+
+    POR QUE (investigado el 25-sep-2026, docs/05_Estado_app_web.md seccion
+    20): con el problema completo, HiGHS nunca mejora su punto de partida --
+    en 180 s devolvia sin cambios la solucion de la pasada 2, y el gap de
+    ~64% no era una relajacion debil sino ausencia total de mejora. Moverse
+    hacia un plan mas balanceado exige cambiar a la vez unidades, izadas,
+    capas y contiguidad de dos bodegas, y sus heuristicas no lo encuentran.
+    Liberando un par de bodegas y fijando el resto, cada subproblema es chico
+    y HiGHS lo resuelve a optimo en segundos. En el caso base: 6.294 t ->
+    3.604 t en ~30 s, contra una cota dual de 3.272 t.
+
+    Pasos:
+      1. Ajusta peso_max/peso_min del punto de partida (ajustar_pesos_extremos).
+      2. SEGUNDOS_COTA_PASADA3 s de HiGHS sobre el problema completo, solo
+         para la cota dual (y por si encontrara algo mejor).
+      3. Recorre todos los pares de bodegas por rondas: fija las variables
+         (x, y, z, w, v) de las OTRAS bodegas en su valor actual -- el par,
+         T_max y peso_max/peso_min quedan libres --, resuelve con warm start y
+         acepta si baja el desbalance. Termina cuando una ronda completa no mejora o se acaba
+         `limite`.
+
+    El makespan queda acotado al valor de solucion_inicial (la pasada 2)
+    durante toda la pasada: la restriccion "makespan_fijado" de la pasada 2
+    permite hasta +TOLERANCIA_IZADAS izadas sobre la pasada 1, y sin esta
+    cota la pasada 3 usaba ese margen para balancear peso (a 30 s: 59,97 h
+    -> 60,21 h). El balance nunca debe empeorar el makespan ya entregado.
+
+    Cada solucion aceptada se verifica contra TODAS las restricciones de prob
+    (mismo criterio que solucion_inicial.py): si un subproblema devuelve algo
+    con violaciones, se descarta.
+
+    crear_solver(limite_segundos) -> solver PuLP. Con HiGHS usa warm start;
+    con otro solver resuelve cada subproblema sin punto de partida.
+    avisar(mensaje): callback opcional de progreso.
+
+    Devuelve (valores, info): valores es el dict nombre -> valor de la mejor
+    solucion (las variables de prob quedan con esos valores); info tiene el
+    mismo esquema que resolver() (estado_pulp, optimo_probado,
+    corto_por_tiempo, gap en %, log) mas desbalance_inicial, desbalance,
+    cota, subproblemas y mejoras.
+    """
+    mejor = dict(solucion_inicial)
+    desbalance_inicial = ajustar_pesos_extremos(mejor, x, combos, peso_max, peso_min)
+    cota_superior_t_max = T_max.upBound
+    T_max.upBound = mejor[T_max.name]
+    try:
+        return _vecindarios(
+            prob, x, y, z, w, v, combos, peso_max, peso_min, mejor, desbalance_inicial,
+            limite, crear_solver, avisar,
+        )
+    finally:
+        T_max.upBound = cota_superior_t_max
+
+
+def _vecindarios(
+    prob, x, y, z, w, v, combos, peso_max, peso_min, mejor, desbalance_inicial,
+    limite, crear_solver, avisar,
+):
+    """Cuerpo de resolver_pasada3_por_vecindarios (ver su docstring)."""
+    import itertools
+    import time
+
+    try:
+        from . import solucion_inicial as _si
+    except ImportError:
+        import solucion_inicial as _si
+
+    fin = time.perf_counter() + limite
+
+    def _resolver(limite_sub, valores):
+        solver = crear_solver(max(1, int(limite_sub)))
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            if isinstance(solver, pulp.HiGHS):
+                resolver_highs_con_punto_inicial(prob, solver, valores)
+            else:
+                prob.solve(solver)
+        return solver, buffer.getvalue()
+
+    def _candidato():
+        """Solucion que dejo el solver, con los pesos extremos ajustados; None
+        si no hay solucion o si viola alguna restriccion."""
+        valores = capturar_solucion(prob)
+        if any(val is None for val in valores.values()):
+            return None, None
+        desb = ajustar_pesos_extremos(valores, x, combos, peso_max, peso_min)
+        if _si._violaciones(prob, valores):
+            return None, None
+        return valores, desb
+
+    desbalance = desbalance_inicial
+
+    # 2. Cota dual con el problema completo
+    cota = None
+    solver, log = _resolver(min(SEGUNDOS_COTA_PASADA3, limite), mejor)
+    modelo = getattr(prob, "solverModel", None)
+    if isinstance(solver, pulp.HiGHS) and modelo is not None:
+        try:
+            cota = modelo.getInfo().mip_dual_bound
+        except Exception:
+            cota = None
+    candidato, valor = _candidato()
+    if candidato is not None and valor < desbalance - 1e-6:
+        mejor, desbalance = candidato, valor
+
+    # 3. Vecindarios: pares de bodegas
+    por_bodega = {h: [] for h in BODEGAS}
+    for dic in (x, y, z, w, v):
+        for clave, var in dic.items():
+            por_bodega[clave[0]].append(var)
+
+    subproblemas = mejoras = 0
+    corto_por_tiempo = False
+    hubo_mejora = True
+    while hubo_mejora and not corto_por_tiempo:
+        hubo_mejora = False
+        for par in itertools.combinations(BODEGAS, 2):
+            restante = fin - time.perf_counter()
+            if restante < 1:
+                corto_por_tiempo = True
+                break
+            fijadas = []
+            try:
+                for h in BODEGAS:
+                    if h in par:
+                        continue
+                    for var in por_bodega[h]:
+                        valor_actual = mejor.get(var.name)
+                        if valor_actual is None:
+                            continue
+                        fijadas.append((var, var.lowBound, var.upBound))
+                        var.lowBound = var.upBound = valor_actual
+                _resolver(min(LIMITE_SUBPROBLEMA_PASADA3, restante), mejor)
+            finally:
+                for var, lb, ub in fijadas:
+                    var.lowBound, var.upBound = lb, ub
+            subproblemas += 1
+            candidato, valor = _candidato()
+            if candidato is not None and valor < desbalance - 1e-6:
+                mejor, desbalance = candidato, valor
+                mejoras += 1
+                hubo_mejora = True
+                if avisar is not None:
+                    avisar(
+                        f"Pasada 3 de 3 — balance de peso: {desbalance:,.0f} t".replace(",", ".")
+                    )
+
+    restaurar_solucion(prob, mejor)
+    gap = None
+    if cota is not None and cota < float("inf") and desbalance > 0:
+        gap = max(0.0, (desbalance - cota) / desbalance * 100)
+    info = {
+        "estado_pulp": "Optimal",
+        "optimo_probado": gap == 0.0,
+        "corto_por_tiempo": corto_por_tiempo,
+        "gap": gap,
+        "log": log,
+        "desbalance_inicial": desbalance_inicial,
+        "desbalance": desbalance,
+        "cota": cota,
+        "subproblemas": subproblemas,
+        "mejoras": mejoras,
+    }
+    return mejor, info
 
 
 # =============================================================================
@@ -1955,24 +2177,16 @@ def main(carpeta_datos=None, interactivo=True):
                       f"<= {valor_pasada2 + TOLERANCIA_PASADA3:.2f}")
                 print(f"  Minimizando desbalance de peso (limite {LIMITE_SEGUNDOS_BALANCE} s)...")
                 solucion_pasada2 = capturar_solucion(prob)
-                # Sin warm start desde la pasada 2 esta pasada no encuentra
-                # ninguna solucion factible (ver resolver_highs_con_punto_inicial)
-                res3 = resolver(prob, limite=LIMITE_SEGUNDOS_BALANCE,
-                                solucion_inicial=solucion_pasada2)
-
-                if T_max.value() is None or T_max.value() <= 0:
-                    print("  La pasada 3 no encontro solucion dentro del limite.")
-                    print("  Se conserva el resultado de la pasada 2.")
-                    restaurar_solucion(prob, solucion_pasada2)
-                    res_final = res2
-                else:
-                    desbalance_ton = sum(
-                        peso_max[k].value() - peso_min[k].value() for k in peso_max
-                    )
-                    print(f"  Desbalance de peso final: {desbalance_ton:.1f} t "
-                          f"(suma de max-min de cada etapa del viaje)")
-                    describir_resolucion(res3, "Pasada 3")
-                    res_final = res3
+                # Busqueda por vecindarios: ver resolver_pasada3_por_vecindarios
+                _, res3 = resolver_pasada3_por_vecindarios(
+                    prob, x, y, z, w, v, T_max, combos, peso_max, peso_min,
+                    solucion_pasada2, LIMITE_SEGUNDOS_BALANCE, _crear_solver,
+                )
+                print(f"  Desbalance de peso: {res3['desbalance_inicial']:.1f} t al partir "
+                      f"-> {res3['desbalance']:.1f} t "
+                      f"({res3['mejoras']} mejoras en {res3['subproblemas']} subproblemas)")
+                describir_resolucion(res3, "Pasada 3")
+                res_final = res3
     else:
         print("\nSin terminos secundarios activos: se omite la pasada 2.")
         res_final = res1
