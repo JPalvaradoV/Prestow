@@ -1204,3 +1204,35 @@ vez unidades, izadas, capas y contigüidad de dos bodegas.
 Corolario: la sección 10 atribuyó el estancamiento con 4 etapas a una
 relajación débil. Con este resultado, es más probable que también ahí fuera
 la búsqueda. No se volvió a probar con 4 etapas.
+
+### 4. Implementación (misma sesión, a pedido del dueño del proyecto)
+
+`modelo_prestow.resolver_pasada3_por_vecindarios()`, usada por `api.py` y
+por el CLI en vez de pasarle la pasada 3 completa a HiGHS:
+
+1. `ajustar_pesos_extremos()`: `peso_max`/`peso_min` del punto de partida al
+   peso real (arregla el `peso_min = 0`).
+2. `SEGUNDOS_COTA_PASADA3` (10 s) de HiGHS sobre el problema completo, solo
+   para la cota dual, y así el gap que se informa sigue siendo honesto.
+3. Rondas sobre los 28 pares de bodegas: fija las variables x, y, z, w, v de
+   las otras seis y resuelve el subproblema con warm start
+   (`LIMITE_SUBPROBLEMA_PASADA3` = 20 s máx.). Acepta si baja el desbalance
+   y la solución pasa la verificación contra todas las restricciones.
+   Termina cuando una ronda completa no mejora o se acaba el tiempo.
+4. `T_max` acotado al valor de la pasada 2 durante toda la pasada 3. En una
+   primera versión quedaba libre y, a 30 s, la pasada 3 usaba el margen de
+   +2 izadas de la pasada 2 para balancear peso: el makespan subía de 59,97
+   a 60,21 h. El balance nunca debe empeorar el makespan ya entregado.
+
+Verificado:
+
+| Corrida | Makespan | Desbalance de peso | Gap pasada 3 | Desbalance cuadrillas | Verificaciones |
+|---|---|---|---|---|---|
+| CLI 180 s (dos corridas, idénticas) | 59,67 h | 6.294 → **3.604 t** | 9,19% | 5,8% | 4/4 OK |
+| Web (`api`) 30 s | 59,97 h (igual que la pasada 2) | → **3.519 t** | 7,29% | 1,4% | 4/4 OK |
+
+A 180 s: 6 mejoras en 84 subproblemas; la búsqueda converge en ~40 s de
+los 180 disponibles, así que la corrida total es ~2 minutos más corta que
+antes. Izadas 1836, fragmentación 11 (izadas + 10 × fragmentación = 1946,
+dentro del margen de 2 de la pasada 2). Test nuevo en
+`tests/test_solucion_inicial.py` (`ajustar_pesos_extremos`).
