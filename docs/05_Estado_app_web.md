@@ -1139,3 +1139,68 @@ Verificado reproduciendo el caso: con un `resolver_prestow` sin
 `nombre_buque` en memoria y `src/api.py` modificado, la página Ejecutar
 completa (AppTest, 30 s) recargó el núcleo y terminó sin error, 59,97 h.
 Test: `tests/test_nucleo.py`.
+
+---
+
+## 20. Pendiente #7 investigado: la pasada 3 nunca optimizaba nada (25-sep-2026)
+
+**Conclusión: el gap de ~64% de la pasada 3 no viene de una relajación LP
+débil (la hipótesis de la sección 10). Viene de que HiGHS nunca mejora su
+punto de partida, y ese punto de partida estaba mal armado.**
+
+Todo sobre el caso base, con la misma solución de pasada 2 (makespan 59,67 h,
+objetivo de pasada 2 = 1944), guardada para comparar variantes sin
+recalcular.
+
+### 1. El punto de partida tenía peso_min = 0
+
+La pasada 3 arranca (warm start) desde la solución de la pasada 2. Ahí
+`peso_max`/`peso_min` no estaban en el objetivo y quedaron en valores
+arbitrarios: `peso_max` = 9.067,78 (la bodega 2) y `peso_min` = **0**. El
+log muestra "MIP start ... objective value is 9067.78" y el primal bound
+final es 9067.78: en 180 s no mejoró nada. El "desbalance de peso" de 9.068 t
+reportado es el peso de la bodega más cargada, no un desbalance. El real de
+ese plan es (9.068 − 2.773) = **6.294 t**. Esto explica también por qué la
+pasada 3 "dejó de variar entre corridas" (sección 15): siempre devuelve su
+punto de partida sin tocarlo. (El KPI no se muestra en ninguna página; la
+sección "Balance de peso" de la web calcula el peso desde el plan y es
+correcta, pero el plan nunca fue balanceado.)
+
+### 2. Con el punto de partida corregido, HiGHS tampoco mejora
+
+| Variante (180 s, misma pasada 2) | Resultado | Plan |
+|---|---|---|
+| Punto de partida con peso_max/peso_min reales | 6.294 t, gap 48% | idéntico al de la pasada 2 |
+| + margen de la pasada 2 de 2 → 40 | 6.294 t, gap 48% | idéntico |
+| + objetivo sin la bodega 1 | 1.772 t, gap 100% (cota 0) | idéntico |
+
+Ni aflojando restricciones encuentra una sola solución mejor. El cuello de
+botella es la búsqueda de soluciones de HiGHS, no la cota.
+
+### 3. Búsqueda por vecindarios: 6.294 → 3.604 t en ~30 s
+
+Prueba (script en el scratchpad de la sesión, no versionado): fijar todas las
+variables salvo las de un par de bodegas y resolver ese subproblema con
+HiGHS (20 s máx., con warm start), aceptando si mejora; recorrer todos los
+pares hasta que ninguno mejore.
+
+| | Pasada 3 actual | Vecindarios |
+|---|---|---|
+| Desbalance de peso (máx − mín) | 6.294 t | **3.604 t (−43%)** |
+| Cota dual (de HiGHS) | 3.272 t | 3.272 t |
+| Gap | 48% | **~9%** |
+| Makespan | 59,67 h | 59,67 h |
+| Izadas / fragmentación | 1844 / 10 | 1836 / 11 (izadas + 10 × frag = 1946, dentro del margen de 2) |
+| Horas por cuadrilla | 56,24 / 59,67 / 59,62 / 54,29 | 56,24 / 59,34 / 59,62 / 59,66 |
+| Desbalance entre cuadrillas | 9,4% | **5,8%** (mejor que el 6,9% del plan manual) |
+| Violaciones (todas las restricciones del modelo) | — | 0 |
+
+Peso por bodega: bodega 1 pasa de 2.773 t a 4.557 t; las demás quedan entre
+7.304 y 8.161 t. La clave: la cuadrilla 4 (bodegas 2 + 1) tenía 5,4 h de
+holgura; había espacio para cargar más la bodega 1 (grúa lenta) sin tocar el
+makespan, pero HiGHS nunca encontró ese movimiento, que exige cambiar a la
+vez unidades, izadas, capas y contigüidad de dos bodegas.
+
+Corolario: la sección 10 atribuyó el estancamiento con 4 etapas a una
+relajación débil. Con este resultado, es más probable que también ahí fuera
+la búsqueda. No se volvió a probar con 4 etapas.
