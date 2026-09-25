@@ -7,6 +7,8 @@ Este documento reúne en un solo lugar qué hace el programa, cómo está constr
 - **Informe Técnico:** describe la solución para quien la usa y la mantiene (planificador portuario). Sección 13.
 - **Informe Académico:** reflexiona sobre el proceso de desarrollo: decisiones, alternativas, errores y aprendizajes (lector: el profesor). Sección 14.
 
+> **Tareas pendientes del equipo:** hay 5 cosas que ningún asistente puede hacer y que el equipo debe desarrollar antes de cerrar los informes (referencias APA, capturas, bitácora, autoevaluaciones y enunciado oficial). Están en la **sección 16**, con cómo hacerlas y cuándo quedan terminadas.
+
 Las secciones 1 a 12 son el contenido común: se escriben una vez y cada informe toma lo que necesita, con su tono. La sección 18 trae los análisis hechos específicamente para los informes (instancias de prueba, sensibilidad a rendimientos y a tamaño).
 
 > **Antes de copiar cifras de otros documentos:** varios documentos anteriores (`00_LEEME_PRIMERO_contexto.md`, `01_Contexto_Informe_Academico.md`, `04_Prompt_Informe_Tecnico.md`, `Resumen_Trabajo_Realizado.md`) tienen cifras que ya no están vigentes (57,59 h, 58,19 h, desbalance 0,1-0,2%, fragmentación 21-22, "275 unidades sin reconciliar", "gap 0,195%"). La **sección 15** lista cada cifra obsoleta con su reemplazo. **Ante cualquier duda, manda este documento y `CLAUDE.md` sección 3.**
@@ -39,7 +41,7 @@ Las secciones 1 a 12 son el contenido común: se escriben una vez y cada informe
 6. **Supuestos en tres partes:** qué se asume, por qué y qué pasaría si fuera falso (sección 4).
 7. **Informe Técnico:** para el planificador portuario; prosa en el cuerpo y modelo formal en anexo. Extensión máxima: Resumen ejecutivo 1 página, Problema y contexto 2, Objetivos 1, Modelo y método 4, Arquitectura 1, Datos de entrada 2, Instrucciones de uso 5, Validación y testeo 3.
 8. **Informe Académico:** para el profesor; reflexión sobre el proceso: decisiones con sus alternativas, errores y aprendizajes (sección 14). Declarar el uso de IA generativa (sección 14).
-9. **Lo que solo aporta el equipo** (no lo redactes tú, deja el marcador): capturas de pantalla, referencias APA verificadas, contenido de la bitácora, autoevaluaciones individuales, prompts de IA si el enunciado los pide.
+9. **Lo que solo aporta el equipo** (sección 16, tareas T1 a T5): no lo redactes tú. Donde haga falta, deja el marcador `[PENDIENTE EQUIPO: T#]` (por ejemplo `[PENDIENTE EQUIPO: T2 — captura de la página Resultados]`), para que el equipo encuentre todo lo que falta buscando ese texto.
 
 ---
 
@@ -60,7 +62,7 @@ Las secciones 1 a 12 son el contenido común: se escriben una vez y cada informe
 13. Guía para el Informe Técnico (sección por sección)
 14. Guía para el Informe Académico (sección por sección)
 15. Registro de cifras obsoletas
-16. Qué falta y quién lo aporta
+16. Tareas del equipo (lo que falta y solo el equipo puede hacer)
 17. Glosario
 18. Análisis para los informes: instancias de prueba, rendimientos y tamaño
 
@@ -565,17 +567,21 @@ El enunciado permite usar IA para estudiar alternativas, no para decidir. En las
 
 ---
 
-## 16. Qué falta y quién lo aporta
+## 16. Tareas del equipo (lo que falta y solo el equipo puede hacer)
 
-**Ya resuelto para los informes** (sección 18): instancias de prueba con su pregunta, sensibilidad a rendimientos t/h y sensibilidad al tamaño.
+**Ya resuelto para los informes:** todo el contenido técnico (secciones 1-15) y los análisis que exigen los informes (sección 18: instancias de prueba, sensibilidad a rendimientos t/h y a tamaño).
 
-**Solo lo puede aportar el equipo:**
+**Tareas pendientes.** Ningún asistente puede hacerlas: requieren acceso a fuentes, a la app o a las personas del equipo. El asistente que redacte deja el marcador `[PENDIENTE EQUIPO: T#]` donde falte cada una.
 
-1. **Referencias APA 7 verificadas en la fuente original.** Sin ellas, la subtarea 8 del Técnico (métodos con citas) y el cierre de ambos informes quedan incompletos. El asistente no debe generarlas.
-2. **Capturas de la app desplegada** para el manual (subtareas 15 y 17). Tomarlas con el caso demo a 180 s, para que la cifra coincida con el resumen ejecutivo (59,67 h).
-3. **Bitácora semanal** llena o reconstruida (única fuente del "Proceso de desarrollo" del Académico). Material de apoyo: la cronología (sección 12), el historial de git y `docs/reportes_sesion/`.
-4. **Autoevaluaciones individuales** (Académico, sección 10).
-5. **Prompts de IA** del generador de instancias, si el enunciado los pide literalmente (ver la sección 14).
+| # | Tarea | Para qué sección | Cómo hacerla | Terminada cuando |
+|---|---|---|---|---|
+| **T1** | **Verificar las referencias APA 7 en la fuente original** | Técnico, subtarea 8 (métodos con citas; parte de los 35 puntos de Modelo y método). Cierre de ambos informes (referencias) | Por cada referencia, abrir el paper o libro original y confirmar autor, año, título, revista, páginas y que diga lo que se le atribuye. Si no se encontró literatura del caso exacto (celulosa unitizada en open hatch), documentar la búsqueda hecha (bases, términos, fechas): un vacío se demuestra con el rastreo, no se afirma | Cada cita del texto tiene su entrada APA 7 verificada contra la fuente, y hay un párrafo con el rastreo de literatura |
+| **T2** | **Tomar las capturas de la app desplegada** | Técnico, manual de usuario: subtareas 15 (acceso) y 17 (ejemplo paso a paso) | En https://prestow.streamlit.app: Inicio → cargar caso demo → Configuración (nombre del buque y plan de referencia) → Ejecutar a **180 s** → Resultados (indicadores y comparación, vista del buque, planimetría con izadas, balance de peso, detalles técnicos) → Excel descargado. Una captura por paso | Hay una captura por paso y la del resultado muestra **59 h 40 min (59,67 h)**, la misma cifra del resumen ejecutivo y de la comparación con el plan manual |
+| **T3** | **Llenar o reconstruir la bitácora semanal** (`planificacion/Bitacora_Semanal_Prestow_Lirquen.xlsx`) | Académico, sección 2 "Proceso de desarrollo" (subtareas 3-4): es su única fuente | Completar semana por semana qué se hizo, qué se decidió y qué problemas hubo. Apoyo para reconstruir: la cronología de la sección 12, el historial de git (`git log`) y los reportes de `docs/reportes_sesion/`. Lo que no se pueda reconstruir con evidencia se declara como no registrado, en vez de rellenarlo de memoria | Cada semana del proyecto tiene su entrada, respaldada por alguna evidencia |
+| **T4** | **Escribir las autoevaluaciones individuales** | Académico, sección 10 "Conclusiones" (subtarea 28) | Cada integrante escribe la suya. Vara común para que las cinco midan lo mismo: la propuesta de valor de la sección 1 ("reproducir la calidad del plan manual en minutos en lugar de días") | Están las 5 autoevaluaciones, escritas por cada integrante |
+| **T5** | **Conseguir el enunciado oficial del curso y adjuntarlo** | Ambos informes: rúbrica y puntajes definitivos, requisitos literales (por ejemplo, anexar prompts de IA) | Descargarlo de la plataforma del curso y adjuntarlo al chat que redacte, junto con este documento y las guías en PDF. Si difiere de las guías (`Guia_Informe_Tecnico…`, `Guia_de_tareas…`), manda el enunciado | El asistente tiene el enunciado adjunto y las secciones se revisaron contra su rúbrica |
+
+**Nota sobre la tarea T5 y el uso de IA:** si el enunciado exige anexar los prompts usados para generar código con IA (la guía de tareas lo dice para el generador de instancias, subtarea 12 del Académico), el equipo decide cómo documentarlo. El generador se construyó con un asistente de código a pedido del dueño del proyecto; ver la sección 14, "Uso de IA generativa".
 
 **Se declaran tal cual en los informes** (no son tareas):
 
@@ -583,6 +589,7 @@ El enunciado permite usar IA para estudiar alternativas, no para decidir. En las
 - El KPI de aprovechamiento de superficie (96,3% en el plan manual) no se calcula para el plan del modelo: no incluirlo en la tabla comparativa, o declararlo.
 - Las izadas del plan manual no están documentadas: en la comparación, "sin dato".
 - La comparación CBC contra HiGHS (57,12 contra 56,88 h) es de una versión anterior del modelo: citarla como medición histórica.
+- Desde 180 s por pasada el sistema puede terminar sin solución en casos distintos del demo; la recomendación es 170 s (sección 18.1).
 
 ---
 
